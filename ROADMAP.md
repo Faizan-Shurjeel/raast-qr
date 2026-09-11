@@ -1,11 +1,13 @@
 # Roadmap: `raast-qr` & The Pakistan Rust Fintech Ecosystem
 
 ## Phase 1: `raast-qr` Foundation (Sprint 1 — 3 Days)
-- [ ] Establish workspace (`raast-qr` core + `raast-qr-cli`).
-- [ ] Implement Table-Driven CRC16-CCITT with EMVCo test vectors.
-- [ ] Implement zero-copy TLV scanner and parser (`winnow`/`nom` or hand-rolled).
-- [ ] Build SBP Raast profile builder and validation rules (PKR `586`, Tag 26 Sub-tags).
-- [ ] Add property-based testing (`proptest`) checking roundtrip invariant: `parse(build(x)) == x`.
+- [x] Establish workspace (`raast-qr` core + `raast-qr-cli`).
+- [x] Implement Table-Driven CRC16-CCITT with EMVCo test vectors (`crc.rs`).
+- [x] Implement zero-copy TLV scanner and parser (`tlv.rs`).
+- [x] Build SBP Raast profile builder and validation rules (`raast.rs` / `builder.rs`).
+- [x] Implement roundtrip verification tests (`parse(build(x)) == x`).
+- [x] Implement standalone CLI tool (`crates/raast-qr-cli`).
+- [ ] Add property-based testing (`proptest`).
 - [ ] Publish `v0.1.0` to crates.io.
 
 ## Phase 2: Interop & Ecosystem Growth (Sprint 2)

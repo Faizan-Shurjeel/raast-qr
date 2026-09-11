@@ -1,10 +1,203 @@
+//! SBP Raast domain models and parser.
+
+use core::str::FromStr;
+use rust_decimal::Decimal;
+
+use crate::crc::{compute_crc16, verify_crc};
+use crate::error::RaastError;
+use crate::tlv::TlvIter;
+
+#[cfg(any(feature = "std", feature = "alloc"))]
+use crate::builder::RaastQrBuilder;
+
+/// Point of Initiation Method (Tag 01).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InitiationMethod {
+    /// Static QR (reusable, customer or POS specifies amount).
     Static,
+    /// Dynamic QR (single-use transaction, strict pre-set amount).
     Dynamic,
 }
 
+impl InitiationMethod {
+    #[inline]
+    pub fn as_code(&self) -> &'static str {
+        match self {
+            InitiationMethod::Static => "11",
+            InitiationMethod::Dynamic => "12",
+        }
+    }
+}
+
+/// Supported ISO 4217 Currency (Tag 53).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Currency {
-    PKR, // 586
+    /// Pakistani Rupee (ISO 4217 code 586).
+    PKR,
+}
+
+impl Currency {
+    #[inline]
+    pub fn as_code(&self) -> &'static str {
+        match self {
+            Currency::PKR => "586",
+        }
+    }
+}
+
+/// Validated SBP Raast EMVCo QR representation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RaastQr<'a> {
+    pub initiation_method: InitiationMethod,
+    pub raast_id: &'a str,
+    pub bank_code: Option<&'a str>,
+    pub mcc: &'a str,
+    pub currency: Currency,
+    pub amount: Option<Decimal>,
+    pub country_code: &'a str,
+    pub merchant_name: &'a str,
+    pub merchant_city: &'a str,
+    pub bill_reference: Option<&'a str>,
+}
+
+impl<'a> RaastQr<'a> {
+    #[cfg(any(feature = "std", feature = "alloc"))]
+    pub fn builder() -> RaastQrBuilder {
+        RaastQrBuilder::new()
+    }
+
+    /// Parses and validates an EMVCo Raast QR string.
+    pub fn parse(raw: &'a str) -> Result<Self, RaastError> {
+        if raw.len() > 512 {
+            return Err(RaastError::PayloadTooLong);
+        }
+
+        if !verify_crc(raw.as_bytes()) {
+            if raw.len() >= 8 && &raw[raw.len() - 8..raw.len() - 4] == "6304" {
+                let data_part = &raw[..raw.len() - 4];
+                let expected = compute_crc16(data_part.as_bytes());
+                let found = u16::from_str_radix(&raw[raw.len() - 4..], 16)
+                    .unwrap_or(0);
+                return Err(RaastError::InvalidChecksum { expected, found });
+            }
+            return Err(RaastError::MalformedTlv("invalid or missing CRC framing"));
+        }
+
+        if !raw.starts_with("000201") {
+            return Err(RaastError::Tag00NotFirst);
+        }
+
+        let payload_without_crc = &raw[..raw.len() - 8];
+        let mut iter = TlvIter::new(payload_without_crc);
+
+        let mut initiation_method = InitiationMethod::Static;
+        let mut raast_id: Option<&'a str> = None;
+        let mut bank_code: Option<&'a str> = None;
+        let mut mcc: Option<&'a str> = None;
+        let mut currency: Option<Currency> = None;
+        let mut amount: Option<Decimal> = None;
+        let mut country_code: Option<&'a str> = None;
+        let mut merchant_name: Option<&'a str> = None;
+        let mut merchant_city: Option<&'a str> = None;
+        let mut bill_reference: Option<&'a str> = None;
+
+        while let Some(tlv_res) = iter.next() {
+            let tlv = tlv_res?;
+            match tlv.tag {
+                "00" => {
+                    if tlv.value != "01" {
+                        return Err(RaastError::MalformedTlv("unsupported payload format version"));
+                    }
+                }
+                "01" => match tlv.value {
+                    "11" => initiation_method = InitiationMethod::Static,
+                    "12" => initiation_method = InitiationMethod::Dynamic,
+                    _ => return Err(RaastError::MalformedTlv("invalid initiation method (expected 11 or 12)")),
+                },
+                "26" => {
+                    for sub in tlv.sub_tlvs() {
+                        let sub_tlv = sub?;
+                        match sub_tlv.tag {
+                            "00" => {
+                                if sub_tlv.value != "pk.raast" {
+                                    return Err(RaastError::MalformedTlv("unsupported merchant GUID (expected pk.raast)"));
+                                }
+                            }
+                            "01" => raast_id = Some(sub_tlv.value),
+                            "02" => bank_code = Some(sub_tlv.value),
+                            _ => {}
+                        }
+                    }
+                }
+                "52" => {
+                    if tlv.length != 4 {
+                        return Err(RaastError::MalformedTlv("MCC must be exactly 4 digits"));
+                    }
+                    mcc = Some(tlv.value);
+                }
+                "53" => {
+                    if tlv.value != "586" {
+                        let code: u16 = tlv.value.parse().unwrap_or(0);
+                        return Err(RaastError::UnsupportedCurrency(code));
+                    }
+                    currency = Some(Currency::PKR);
+                }
+                "54" => {
+                    let dec = Decimal::from_str(tlv.value)
+                        .map_err(|_| RaastError::InvalidAmount("cannot parse decimal value"))?;
+                    if dec <= Decimal::ZERO {
+                        return Err(RaastError::InvalidAmount("amount must be greater than zero"));
+                    }
+                    amount = Some(dec);
+                }
+                "58" => {
+                    country_code = Some(tlv.value);
+                }
+                "59" => {
+                    merchant_name = Some(tlv.value);
+                }
+                "60" => {
+                    merchant_city = Some(tlv.value);
+                }
+                "62" => {
+                    for sub in tlv.sub_tlvs() {
+                        let sub_tlv = sub?;
+                        if sub_tlv.tag == "01" {
+                            bill_reference = Some(sub_tlv.value);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let raast_id = raast_id.ok_or(RaastError::MissingMandatoryTag("26.01 (Raast ID / Alias)"))?;
+        let mcc = mcc.ok_or(RaastError::MissingMandatoryTag("52 (MCC)"))?;
+        let currency = currency.ok_or(RaastError::MissingMandatoryTag("53 (Currency 586)"))?;
+        let country_code = country_code.ok_or(RaastError::MissingMandatoryTag("58 (Country Code)"))?;
+        let merchant_name = merchant_name.ok_or(RaastError::MissingMandatoryTag("59 (Merchant Name)"))?;
+        let merchant_city = merchant_city.ok_or(RaastError::MissingMandatoryTag("60 (Merchant City)"))?;
+
+        if initiation_method == InitiationMethod::Dynamic && amount.is_none() {
+            return Err(RaastError::InvalidAmount("dynamic initiation method requires an amount"));
+        }
+
+        Ok(Self {
+            initiation_method,
+            raast_id,
+            bank_code,
+            mcc,
+            currency,
+            amount,
+            country_code,
+            merchant_name,
+            merchant_city,
+            bill_reference,
+        })
+    }
+
+    #[inline]
+    pub fn is_dynamic(&self) -> bool {
+        self.initiation_method == InitiationMethod::Dynamic
+    }
 }
