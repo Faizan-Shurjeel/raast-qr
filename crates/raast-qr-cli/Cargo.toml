@@ -1,0 +1,15 @@
+[package]
+name = "raast-qr-cli"
+description = "CLI tool to inspect, generate, and verify Raast & EMVCo QR payloads."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+raast-qr = { path = "../raast-qr" }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rust_decimal = { workspace = true }

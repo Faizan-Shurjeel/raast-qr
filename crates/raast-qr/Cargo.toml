@@ -1,0 +1,23 @@
+[package]
+name = "raast-qr"
+description = "High-performance, #![no_std], fail-closed EMVCo & Raast QR engine."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = ["rust_decimal/std", "dep:thiserror"]
+alloc = []
+
+[dependencies]
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+thiserror = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = "1.4"
