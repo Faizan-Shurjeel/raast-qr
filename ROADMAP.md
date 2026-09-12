@@ -1,19 +1,22 @@
 # Roadmap: `raast-qr` & The Pakistan Rust Fintech Ecosystem
 
-## Phase 1: `raast-qr` Foundation (Sprint 1 — 3 Days)
+## Phase 1: `raast-qr` Foundation (Sprint 1 — Completed)
 - [x] Establish workspace (`raast-qr` core + `raast-qr-cli`).
-- [x] Implement Table-Driven CRC16-CCITT with EMVCo test vectors (`crc.rs`).
-- [x] Implement zero-copy TLV scanner and parser (`tlv.rs`).
-- [x] Build SBP Raast profile builder and validation rules (`raast.rs` / `builder.rs`).
-- [x] Implement roundtrip verification tests (`parse(build(x)) == x`).
-- [x] Implement standalone CLI tool (`crates/raast-qr-cli`).
-- [ ] Add property-based testing (`proptest`).
-- [ ] Publish `v0.1.0` to crates.io.
+- [x] Table-Driven CRC16-CCITT implementation with EMVCo test vectors.
+- [x] Zero-copy, panic-free TLV scanner and parser (`tlv.rs`).
+- [x] SBP Raast profile builder and validation rules (`raast.rs` / `builder.rs`).
+- [x] Symmetric parse-path and build-path EMVCo byte-length checks.
+- [x] Interoperable multi-scheme MAI support (`26..=51`) with dynamic disambiguation (`parse_with_guid`).
+- [x] Standalone CLI tool (`crates/raast-qr-cli`) with `--format json`.
+- [x] Automated regression tests ensuring README examples never drift from parser logic.
+- [x] Property-based mutation fuzzing tests (`proptest`).
+- [x] Tracked `Cargo.lock` and MSRV verified at Rust 1.85+.
+- [x] Published `v0.1.5` to crates.io.
 
-## Phase 2: Interop & Ecosystem Growth (Sprint 2)
-- [ ] Feature flag `image`/`qrcode` for instant SVG/PNG generation in CLI.
+## Phase 2: Production Payload Calibration & Interop (Current)
+- [ ] Collect and calibrate live scanned QR payloads from Pakistani acquirers (Meezan, HBL, 1LINK, EasyPaisa).
+- [ ] Feature flag `image`/`qrcode` for instant terminal/file SVG/PNG generation in CLI.
 - [ ] Create `raast-qr-wasm` for in-browser client generation.
-- [ ] Write integration tutorials for Axum/Actix-web checkout microservices.
 
 ## Phase 3: `payfast-rs` (Industrial Gateway SDK)
 - [ ] Build `payfast-core` (pure protocol, serde models, payload signing).
