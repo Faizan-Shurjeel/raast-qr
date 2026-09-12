@@ -16,6 +16,8 @@ use crate::raast::{Currency, InitiationMethod};
 #[derive(Debug, Clone)]
 pub struct RaastQrBuilder {
     initiation_method: InitiationMethod,
+    mai_tag: String,
+    scheme_guid: String,
     raast_id: Option<String>,
     bank_code: Option<String>,
     mcc: String,
@@ -37,6 +39,8 @@ impl RaastQrBuilder {
     pub fn new() -> Self {
         Self {
             initiation_method: InitiationMethod::Static,
+            mai_tag: "26".to_string(),
+            scheme_guid: "pk.raast".to_string(),
             raast_id: None,
             bank_code: None,
             mcc: "0000".to_string(),
@@ -51,6 +55,18 @@ impl RaastQrBuilder {
 
     pub fn initiation_method(mut self, method: InitiationMethod) -> Self {
         self.initiation_method = method;
+        self
+    }
+
+    /// Sets the Merchant Account Information Tag (defaults to "26", range 26..=51)
+    pub fn mai_tag(mut self, tag: impl Into<String>) -> Self {
+        self.mai_tag = tag.into();
+        self
+    }
+
+    /// Sets the Scheme Identifier / GUID (defaults to "pk.raast")
+    pub fn scheme_guid(mut self, guid: impl Into<String>) -> Self {
+        self.scheme_guid = guid.into();
         self
     }
 
@@ -109,7 +125,9 @@ impl RaastQrBuilder {
         let raast_id = self
             .raast_id
             .as_ref()
-            .ok_or(RaastError::MissingMandatoryTag("26.01 (Raast ID / Alias)"))?;
+            .ok_or(RaastError::MissingMandatoryTag(
+                "MAI Sub-tag 01 (Raast ID / Alias)",
+            ))?;
         let merchant_name = self
             .merchant_name
             .as_ref()
@@ -142,8 +160,13 @@ impl RaastQrBuilder {
         }
         if raast_id.len() > 90 {
             return Err(RaastError::FieldLengthExceeded(
-                "26.01 (Raast ID exceeds maximum length)",
+                "MAI Sub-tag 01 (Raast ID exceeds maximum length)",
             ));
+        }
+
+        let tag_num = self.mai_tag.parse::<u8>().unwrap_or(0);
+        if !(26..=51).contains(&tag_num) {
+            return Err(RaastError::MalformedTlv("MAI Tag must be in range 26..=51"));
         }
 
         if self.initiation_method == InitiationMethod::Dynamic && self.amount.is_none() {
@@ -161,26 +184,32 @@ impl RaastQrBuilder {
         write!(buf, "0102{}", self.initiation_method.as_code())
             .map_err(|_| RaastError::MalformedTlv("fmt error"))?;
 
-        // Tag 26: Raast Merchant Info (Sub-tags: 00=pk.raast, 01=ID, 02=BankCode)
-        let mut tag26_sub = String::with_capacity(64);
-        tag26_sub.push_str("0008pk.raast");
-        write!(tag26_sub, "01{:02}{}", raast_id.len(), raast_id)
+        // Tag 26..=51: Merchant Account Info
+        let mut mai_sub = String::with_capacity(64);
+        write!(
+            mai_sub,
+            "00{:02}{}",
+            self.scheme_guid.len(),
+            self.scheme_guid
+        )
+        .map_err(|_| RaastError::MalformedTlv("fmt error"))?;
+        write!(mai_sub, "01{:02}{}", raast_id.len(), raast_id)
             .map_err(|_| RaastError::MalformedTlv("fmt error"))?;
         if let Some(ref bank) = self.bank_code {
             if bank.len() > 20 {
                 return Err(RaastError::FieldLengthExceeded(
-                    "26.02 (Bank code exceeds maximum length)",
+                    "MAI Sub-tag 02 (Bank code exceeds maximum length)",
                 ));
             }
-            write!(tag26_sub, "02{:02}{}", bank.len(), bank)
+            write!(mai_sub, "02{:02}{}", bank.len(), bank)
                 .map_err(|_| RaastError::MalformedTlv("fmt error"))?;
         }
-        if tag26_sub.len() > 99 {
+        if mai_sub.len() > 99 {
             return Err(RaastError::FieldLengthExceeded(
-                "26 (Tag 26 payload exceeds 99 bytes)",
+                "MAI payload exceeds 99 bytes",
             ));
         }
-        write!(buf, "26{:02}{}", tag26_sub.len(), tag26_sub)
+        write!(buf, "{}{:02}{}", self.mai_tag, mai_sub.len(), mai_sub)
             .map_err(|_| RaastError::MalformedTlv("fmt error"))?;
 
         // Tag 52: MCC

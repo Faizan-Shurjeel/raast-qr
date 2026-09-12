@@ -5,19 +5,19 @@
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 [![No-Std](https://img.shields.io/badge/no--std-supported-success.svg)](#)
 
-A high-performance, `#![no_std]`-compatible, fail-closed EMVCo Merchant-Presented Mode (MPM) QR engine tailored for the **State Bank of Pakistan (SBP) Raast P2M & P2P** payment rails.
+A high-performance, `#![no_std]`-compatible, fail-closed EMVCo Merchant-Presented Mode (MPM) QR engine tailored for Pakistan's payment rails and the **State Bank of Pakistan (SBP) Raast P2M & P2P** specifications.
 
-Written in pure Rust with zero heap allocations on parsing, deterministic fixed-point financial math, and strict CRC16-CCITT validation.
+Written in pure Rust with zero heap allocations on parsing, deterministic fixed-point financial math, and table-driven CRC16-CCITT validation.
 
 ---
 
 ## Features
 
-- **Strictly Conforming:** Fully implements EMVCo MPM v1.0 and SBP Raast QR guidelines.
-- **Fail-Closed Security:** Corrupt lengths, missing checksums, or malformed tags fail immediately.
-- **Zero-Alloc Parsing:** Parse slices directly (`&str` / `&[u8]`) without heap overhead.
+- **Interoperable MAI Architecture:** Supports Merchant Account Information tags `26..=51` and customizable scheme GUIDs.
+- **Fail-Closed Security:** Corrupt lengths, missing checksums, multi-byte slicing bugs, or duplicate tags fail immediately.
+- **Zero-Alloc Parsing:** Borrows directly from byte slices (`&str` / `&[u8]`) without heap overhead.
 - **Safe Currency & Amounts:** Zero floating-point drift using `rust_decimal`.
-- **Standalone CLI:** Inspect, generate, and verify Raast payloads directly from the terminal.
+- **Standalone CLI:** Inspect, generate, verify, and output structured JSON from the terminal.
 
 ---
 
@@ -27,7 +27,7 @@ Add `raast-qr` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-raast-qr = "0.1.0"
+raast-qr = "0.1.1"
 rust_decimal = "1.33"
 ```
 
@@ -44,7 +44,7 @@ cargo install raast-qr-cli
 ### 1. Generating a Dynamic Raast P2M QR Code
 
 ```rust
-use raast_qr::{RaastQr, InitiationMethod, Currency};
+use raast_qr::{RaastQr, InitiationMethod};
 use rust_decimal_macros::dec;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,14 +56,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .mcc("5411")
         .amount(dec!(1250.50))
         .bill_reference("INV-2026-001")
-        .build()?;
+        .build_emv_string()?;
 
-    let emv_payload = qr.to_emv_string();
-    println!("Raast QR String:\n{}", emv_payload);
-
-    // Optional: render to SVG/PNG with `image` feature enabled
-    // qr.to_svg("output.svg")?;
-
+    println!("Raast QR String:\n{}", qr);
     Ok(())
 }
 ```
@@ -74,14 +69,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 use raast_qr::RaastQr;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let raw = "00020101021226320008pk.raast0114+92336786582352045411530358654071250.505802PK5915Faizan Shurjeel6006Lahore62160112INV-2026-0016304E1D2";
+    // Verified, compliant SBP Raast dynamic QR string
+    let raw = "00020101021226290008pk.raast0113+92336786582352045411530358654071250.505802PK5915Faizan Shurjeel6006Lahore62160112INV-2026-0016304E5F1";
 
-    // Validates Tag 63 CRC16, length boundaries, and Raast profile constraints
     let parsed = RaastQr::parse(raw)?;
 
-    println!("Merchant: {}", parsed.merchant_name());
-    println!("Amount: {:?} PKR", parsed.amount());
-    println!("Dynamic Checkout: {}", parsed.is_dynamic());
+    assert_eq!(parsed.merchant_name, "Faizan Shurjeel");
+    assert_eq!(parsed.raast_id, "+923367865823");
+    println!("Verified Merchant: {}", parsed.merchant_name);
+    println!("Amount: {:?} PKR", parsed.amount);
 
     Ok(())
 }
@@ -91,25 +87,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## CLI Usage
 
-Verify a payload:
 ```bash
+# Verify payload integrity
 raast-qr verify "000201010212..."
-```
 
-Decode payload to structured JSON:
-```bash
+# Decode to machine-readable JSON
 raast-qr decode "000201010212..." --format json
-```
 
-Generate a dynamic payload:
-```bash
+# Generate a compliant payload
 raast-qr generate \
   --dynamic \
   --alias "+923367865823" \
-  --name "Al-Madina Mart" \
+  --name "Faizan Shurjeel" \
   --city "Lahore" \
-  --amount 850.00 \
-  --ref "ORDER-9912"
+  --amount 1250.50 \
+  --reference "INV-2026-001"
 ```
 
 ---

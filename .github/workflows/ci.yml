@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test:
+    name: Test & Lint Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Formatting Check
+        run: cargo fmt --all --check
+
+      - name: Clippy (-D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test Workspace (Unit, Doctests, Proptests)
+        run: cargo test --workspace
+
+      - name: No-Std Compilation Check
+        run: cargo check -p raast-qr --no-default-features

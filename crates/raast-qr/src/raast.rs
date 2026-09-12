@@ -1,4 +1,4 @@
-//! SBP Raast domain models and parser.
+//! SBP Raast and EMVCo Merchant-Presented Mode domain models and parser.
 
 use core::str::FromStr;
 use rust_decimal::Decimal;
@@ -47,12 +47,18 @@ impl Currency {
     }
 }
 
-/// Validated SBP Raast EMVCo QR representation.
+/// Validated EMVCo / SBP Raast QR representation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct RaastQr<'a> {
     pub initiation_method: InitiationMethod,
+    /// Merchant Account Information Tag (in the range 26..=51)
+    pub mai_tag: &'a str,
+    /// Scheme Identifier / GUID (Sub-tag 00 of MAI)
+    pub scheme_guid: &'a str,
+    /// Merchant Raast ID / Alias / IBAN (Sub-tag 01 of MAI)
     pub raast_id: &'a str,
+    /// Optional Bank / Participant Code (Sub-tag 02 of MAI)
     pub bank_code: Option<&'a str>,
     pub mcc: &'a str,
     pub currency: Currency,
@@ -98,6 +104,8 @@ impl<'a> RaastQr<'a> {
 
         let mut initiation_method = InitiationMethod::Static;
         let mut seen_tag01 = false;
+        let mut mai_tag: Option<&'a str> = None;
+        let mut scheme_guid: Option<&'a str> = None;
         let mut raast_id: Option<&'a str> = None;
         let mut bank_code: Option<&'a str> = None;
         let mut mcc: Option<&'a str> = None;
@@ -133,20 +141,18 @@ impl<'a> RaastQr<'a> {
                         }
                     }
                 }
-                "26" => {
-                    if raast_id.is_some() {
-                        return Err(RaastError::DuplicateTag("26"));
+                // Tags 26..=51: Merchant Account Information (MAI)
+                tag if (26..=51).contains(&tag.parse::<u8>().unwrap_or(0)) => {
+                    if mai_tag.is_some() {
+                        return Err(RaastError::DuplicateTag(
+                            "26-51 (Multiple MAI templates encountered)",
+                        ));
                     }
+                    mai_tag = Some(tag);
                     for sub in tlv.sub_tlvs() {
                         let sub_tlv = sub?;
                         match sub_tlv.tag {
-                            "00" => {
-                                if sub_tlv.value != "pk.raast" {
-                                    return Err(RaastError::MalformedTlv(
-                                        "unsupported merchant GUID (expected pk.raast)",
-                                    ));
-                                }
-                            }
+                            "00" => scheme_guid = Some(sub_tlv.value),
                             "01" => raast_id = Some(sub_tlv.value),
                             "02" => bank_code = Some(sub_tlv.value),
                             _ => {}
@@ -178,6 +184,12 @@ impl<'a> RaastQr<'a> {
                     if amount.is_some() {
                         return Err(RaastError::DuplicateTag("54"));
                     }
+                    // Fail-Closed: Amount must not exceed 13 bytes
+                    if tlv.value.len() > 13 {
+                        return Err(RaastError::FieldLengthExceeded(
+                            "54 (Amount exceeds 13 characters)",
+                        ));
+                    }
                     let dec = Decimal::from_str(tlv.value)
                         .map_err(|_| RaastError::InvalidAmount("cannot parse decimal value"))?;
                     if dec <= Decimal::ZERO {
@@ -200,9 +212,10 @@ impl<'a> RaastQr<'a> {
                     if merchant_name.is_some() {
                         return Err(RaastError::DuplicateTag("59"));
                     }
-                    if tlv.value.chars().count() > 25 {
+                    // Fail-Closed: Byte-length check, NOT chars().count()
+                    if tlv.value.len() > 25 {
                         return Err(RaastError::FieldLengthExceeded(
-                            "59 (Merchant Name > 25 chars)",
+                            "59 (Merchant Name exceeds 25 bytes)",
                         ));
                     }
                     merchant_name = Some(tlv.value);
@@ -211,9 +224,10 @@ impl<'a> RaastQr<'a> {
                     if merchant_city.is_some() {
                         return Err(RaastError::DuplicateTag("60"));
                     }
-                    if tlv.value.chars().count() > 15 {
+                    // Fail-Closed: Byte-length check, NOT chars().count()
+                    if tlv.value.len() > 15 {
                         return Err(RaastError::FieldLengthExceeded(
-                            "60 (Merchant City > 15 chars)",
+                            "60 (Merchant City exceeds 15 bytes)",
                         ));
                     }
                     merchant_city = Some(tlv.value);
@@ -231,8 +245,15 @@ impl<'a> RaastQr<'a> {
             }
         }
 
-        let raast_id =
-            raast_id.ok_or(RaastError::MissingMandatoryTag("26.01 (Raast ID / Alias)"))?;
+        let mai_tag = mai_tag.ok_or(RaastError::MissingMandatoryTag(
+            "26-51 (Merchant Account Info)",
+        ))?;
+        let scheme_guid = scheme_guid.ok_or(RaastError::MissingMandatoryTag(
+            "MAI Sub-tag 00 (Scheme GUID)",
+        ))?;
+        let raast_id = raast_id.ok_or(RaastError::MissingMandatoryTag(
+            "MAI Sub-tag 01 (Raast ID / Alias)",
+        ))?;
         let mcc = mcc.ok_or(RaastError::MissingMandatoryTag("52 (MCC)"))?;
         let currency = currency.ok_or(RaastError::MissingMandatoryTag("53 (Currency 586)"))?;
         let country_code =
@@ -250,6 +271,8 @@ impl<'a> RaastQr<'a> {
 
         Ok(Self {
             initiation_method,
+            mai_tag,
+            scheme_guid,
             raast_id,
             bank_code,
             mcc,
