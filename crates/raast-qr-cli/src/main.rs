@@ -1,6 +1,12 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use raast_qr::{InitiationMethod, RaastQr};
 use rust_decimal::Decimal;
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum OutputFormat {
+    Human,
+    Json,
+}
 
 #[derive(Parser)]
 #[command(name = "raast-qr")]
@@ -21,6 +27,10 @@ enum Commands {
     Decode {
         /// Raw EMVCo payload string
         payload: String,
+
+        /// Output format (human readable or json)
+        #[arg(short, long, value_enum, default_value_t = OutputFormat::Human)]
+        format: OutputFormat,
     },
     /// Generate a compliant SBP Raast EMVCo QR payload
     Generate {
@@ -73,20 +83,27 @@ fn main() {
                 std::process::exit(1);
             }
         },
-        Commands::Decode { payload } => match RaastQr::parse(&payload) {
-            Ok(qr) => {
-                println!("=== SBP Raast QR Payload ===");
-                println!("Initiation Method : {:?}", qr.initiation_method);
-                println!("Raast ID / Alias  : {}", qr.raast_id);
-                println!("Bank Code         : {:?}", qr.bank_code);
-                println!("Merchant Name     : {}", qr.merchant_name);
-                println!("Merchant City     : {}", qr.merchant_city);
-                println!("MCC               : {}", qr.mcc);
-                println!("Currency          : {:?}", qr.currency);
-                println!("Amount            : {:?}", qr.amount);
-                println!("Country Code      : {}", qr.country_code);
-                println!("Bill Reference    : {:?}", qr.bill_reference);
-            }
+        Commands::Decode { payload, format } => match RaastQr::parse(&payload) {
+            Ok(qr) => match format {
+                OutputFormat::Human => {
+                    println!("=== SBP Raast QR Payload ===");
+                    println!("Initiation Method : {:?}", qr.initiation_method);
+                    println!("Raast ID / Alias  : {}", qr.raast_id);
+                    println!("Bank Code         : {:?}", qr.bank_code);
+                    println!("Merchant Name     : {}", qr.merchant_name);
+                    println!("Merchant City     : {}", qr.merchant_city);
+                    println!("MCC               : {}", qr.mcc);
+                    println!("Currency          : {:?}", qr.currency);
+                    println!("Amount            : {:?}", qr.amount);
+                    println!("Country Code      : {}", qr.country_code);
+                    println!("Bill Reference    : {:?}", qr.bill_reference);
+                }
+                OutputFormat::Json => {
+                    let json =
+                        serde_json::to_string_pretty(&qr).unwrap_or_else(|_| "{}".to_string());
+                    println!("{}", json);
+                }
+            },
             Err(e) => {
                 eprintln!("Error decoding payload: {}", e);
                 std::process::exit(1);

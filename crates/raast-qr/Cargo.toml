@@ -11,13 +11,15 @@ categories.workspace = true
 
 [features]
 default = ["std"]
-std = ["rust_decimal/std", "dep:thiserror"]
+std = ["alloc", "rust_decimal/std", "dep:thiserror"]
 alloc = []
+serde = ["dep:serde", "rust_decimal/serde-with-str"]
 
 [dependencies]
 rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
 thiserror = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
 
 [dev-dependencies]
+rust_decimal_macros = { workspace = true }
 proptest = "1.4"

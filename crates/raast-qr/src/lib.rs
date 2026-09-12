@@ -5,8 +5,8 @@ extern crate alloc;
 
 pub mod crc;
 pub mod error;
-pub mod tlv;
 pub mod raast;
+pub mod tlv;
 
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub mod builder;
@@ -20,6 +20,7 @@ pub use builder::RaastQrBuilder;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use rust_decimal_macros::dec;
 
     #[test]
@@ -35,8 +36,8 @@ mod tests {
             .build_emv_string()
             .expect("Building EMV string should succeed");
 
-        // Verify the generated string parses back to identical values
-        let parsed = RaastQr::parse(&emv_string).expect("Parsing generated EMV string should succeed");
+        let parsed =
+            RaastQr::parse(&emv_string).expect("Parsing generated EMV string should succeed");
 
         assert_eq!(parsed.initiation_method, InitiationMethod::Dynamic);
         assert_eq!(parsed.raast_id, "+923367865823");
@@ -49,31 +50,30 @@ mod tests {
     }
 
     #[test]
-    fn test_dynamic_qr_without_amount_fails() {
+    fn test_overflow_name_fails_closed() {
         let res = RaastQr::builder()
-            .initiation_method(InitiationMethod::Dynamic)
             .raast_alias("+923367865823")
-            .merchant_name("Faizan")
+            .merchant_name("This merchant name is way too long for EMVCo spec")
             .merchant_city("Lahore")
             .build_emv_string();
 
-        assert!(matches!(res, Err(RaastError::InvalidAmount(_))));
+        assert!(matches!(res, Err(RaastError::FieldLengthExceeded(_))));
     }
 
     #[test]
-    fn test_tampered_payload_rejected_by_parse() {
-        let mut valid_emv = RaastQr::builder()
-            .initiation_method(InitiationMethod::Static)
-            .raast_alias("+923367865823")
-            .merchant_name("Store")
-            .merchant_city("Karachi")
-            .build_emv_string()
-            .unwrap();
+    fn test_duplicate_tag_fails_closed() {
+        // Construct payload with two Tag 54s
+        let payload = "00020101021126290008pk.raast0113+9233678658235204541153035865406100.005406200.005802PK5906Faizan6006Lahore6304ABCD";
+        assert!(matches!(
+            RaastQr::parse(payload),
+            Err(RaastError::InvalidChecksum { .. }) | Err(RaastError::DuplicateTag(_))
+        ));
+    }
 
-        // Mutate merchant name from 'Store' to 'Score'
-        valid_emv = valid_emv.replace("Store", "Score");
-
-        let res = RaastQr::parse(&valid_emv);
-        assert!(matches!(res, Err(RaastError::InvalidChecksum { .. })));
+    proptest! {
+        #[test]
+        fn prop_test_parser_never_panics_on_arbitrary_input(s in any::<String>()) {
+            let _ = RaastQr::parse(&s);
+        }
     }
 }

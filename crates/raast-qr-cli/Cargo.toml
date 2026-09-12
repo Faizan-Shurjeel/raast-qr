@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-raast-qr = { path = "../raast-qr" }
+raast-qr = { path = "../raast-qr", features = ["serde"] }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
