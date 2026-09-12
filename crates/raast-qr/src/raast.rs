@@ -104,10 +104,13 @@ impl<'a> RaastQr<'a> {
 
         let mut initiation_method = InitiationMethod::Static;
         let mut seen_tag01 = false;
-        let mut mai_tag: Option<&'a str> = None;
-        let mut scheme_guid: Option<&'a str> = None;
-        let mut raast_id: Option<&'a str> = None;
-        let mut bank_code: Option<&'a str> = None;
+        let mut seen_mai_mask = 0u64;
+
+        let mut selected_mai_tag: Option<&'a str> = None;
+        let mut selected_scheme_guid: Option<&'a str> = None;
+        let mut selected_raast_id: Option<&'a str> = None;
+        let mut selected_bank_code: Option<&'a str> = None;
+
         let mut mcc: Option<&'a str> = None;
         let mut currency: Option<Currency> = None;
         let mut amount: Option<Decimal> = None;
@@ -143,20 +146,54 @@ impl<'a> RaastQr<'a> {
                 }
                 // Tags 26..=51: Merchant Account Information (MAI)
                 tag if (26..=51).contains(&tag.parse::<u8>().unwrap_or(0)) => {
-                    if mai_tag.is_some() {
-                        return Err(RaastError::DuplicateTag(
-                            "26-51 (Multiple MAI templates encountered)",
-                        ));
+                    let tag_num = tag.parse::<u8>().unwrap();
+                    let bit = 1u64 << (tag_num - 26);
+                    if (seen_mai_mask & bit) != 0 {
+                        return Err(RaastError::DuplicateTag("duplicate MAI tag"));
                     }
-                    mai_tag = Some(tag);
+                    seen_mai_mask |= bit;
+
+                    let mut current_guid = None;
+                    let mut current_id = None;
+                    let mut current_bank = None;
+
                     for sub in tlv.sub_tlvs() {
                         let sub_tlv = sub?;
                         match sub_tlv.tag {
-                            "00" => scheme_guid = Some(sub_tlv.value),
-                            "01" => raast_id = Some(sub_tlv.value),
-                            "02" => bank_code = Some(sub_tlv.value),
+                            "00" => {
+                                if sub_tlv.value.is_empty() || sub_tlv.value.len() > 32 {
+                                    return Err(RaastError::FieldLengthExceeded(
+                                        "MAI Sub-tag 00 (GUID exceeds 32 bytes)",
+                                    ));
+                                }
+                                current_guid = Some(sub_tlv.value);
+                            }
+                            "01" => {
+                                if sub_tlv.value.is_empty() || sub_tlv.value.len() > 90 {
+                                    return Err(RaastError::FieldLengthExceeded(
+                                        "MAI Sub-tag 01 (Raast ID exceeds 90 bytes)",
+                                    ));
+                                }
+                                current_id = Some(sub_tlv.value);
+                            }
+                            "02" => {
+                                if sub_tlv.value.len() > 20 {
+                                    return Err(RaastError::FieldLengthExceeded(
+                                        "MAI Sub-tag 02 (Bank code exceeds 20 bytes)",
+                                    ));
+                                }
+                                current_bank = Some(sub_tlv.value);
+                            }
                             _ => {}
                         }
+                    }
+
+                    // Select this MAI if none selected yet, or if it explicitly matches Raast scheme
+                    if selected_mai_tag.is_none() || current_guid == Some("pk.raast") {
+                        selected_mai_tag = Some(tag);
+                        selected_scheme_guid = current_guid;
+                        selected_raast_id = current_id;
+                        selected_bank_code = current_bank;
                     }
                 }
                 "52" => {
@@ -184,7 +221,6 @@ impl<'a> RaastQr<'a> {
                     if amount.is_some() {
                         return Err(RaastError::DuplicateTag("54"));
                     }
-                    // Fail-Closed: Amount must not exceed 13 bytes
                     if tlv.value.len() > 13 {
                         return Err(RaastError::FieldLengthExceeded(
                             "54 (Amount exceeds 13 characters)",
@@ -212,7 +248,6 @@ impl<'a> RaastQr<'a> {
                     if merchant_name.is_some() {
                         return Err(RaastError::DuplicateTag("59"));
                     }
-                    // Fail-Closed: Byte-length check, NOT chars().count()
                     if tlv.value.len() > 25 {
                         return Err(RaastError::FieldLengthExceeded(
                             "59 (Merchant Name exceeds 25 bytes)",
@@ -224,7 +259,6 @@ impl<'a> RaastQr<'a> {
                     if merchant_city.is_some() {
                         return Err(RaastError::DuplicateTag("60"));
                     }
-                    // Fail-Closed: Byte-length check, NOT chars().count()
                     if tlv.value.len() > 15 {
                         return Err(RaastError::FieldLengthExceeded(
                             "60 (Merchant City exceeds 15 bytes)",
@@ -236,6 +270,11 @@ impl<'a> RaastQr<'a> {
                     for sub in tlv.sub_tlvs() {
                         let sub_tlv = sub?;
                         if sub_tlv.tag == "01" {
+                            if sub_tlv.value.len() > 25 {
+                                return Err(RaastError::FieldLengthExceeded(
+                                    "62.01 (Bill reference exceeds 25 bytes)",
+                                ));
+                            }
                             bill_reference = Some(sub_tlv.value);
                         }
                     }
@@ -245,13 +284,13 @@ impl<'a> RaastQr<'a> {
             }
         }
 
-        let mai_tag = mai_tag.ok_or(RaastError::MissingMandatoryTag(
+        let mai_tag = selected_mai_tag.ok_or(RaastError::MissingMandatoryTag(
             "26-51 (Merchant Account Info)",
         ))?;
-        let scheme_guid = scheme_guid.ok_or(RaastError::MissingMandatoryTag(
+        let scheme_guid = selected_scheme_guid.ok_or(RaastError::MissingMandatoryTag(
             "MAI Sub-tag 00 (Scheme GUID)",
         ))?;
-        let raast_id = raast_id.ok_or(RaastError::MissingMandatoryTag(
+        let raast_id = selected_raast_id.ok_or(RaastError::MissingMandatoryTag(
             "MAI Sub-tag 01 (Raast ID / Alias)",
         ))?;
         let mcc = mcc.ok_or(RaastError::MissingMandatoryTag("52 (MCC)"))?;
@@ -274,7 +313,7 @@ impl<'a> RaastQr<'a> {
             mai_tag,
             scheme_guid,
             raast_id,
-            bank_code,
+            bank_code: selected_bank_code,
             mcc,
             currency,
             amount,

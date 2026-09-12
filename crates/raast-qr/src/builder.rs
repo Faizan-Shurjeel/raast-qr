@@ -58,13 +58,11 @@ impl RaastQrBuilder {
         self
     }
 
-    /// Sets the Merchant Account Information Tag (defaults to "26", range 26..=51)
     pub fn mai_tag(mut self, tag: impl Into<String>) -> Self {
         self.mai_tag = tag.into();
         self
     }
 
-    /// Sets the Scheme Identifier / GUID (defaults to "pk.raast")
     pub fn scheme_guid(mut self, guid: impl Into<String>) -> Self {
         self.scheme_guid = guid.into();
         self
@@ -137,7 +135,7 @@ impl RaastQrBuilder {
             .as_ref()
             .ok_or(RaastError::MissingMandatoryTag("60 (Merchant City)"))?;
 
-        // Fail-Closed Length and Validation Checks
+        // Fail-Closed Length & Validation Checks
         if merchant_name.len() > 25 {
             return Err(RaastError::FieldLengthExceeded(
                 "59 (Merchant Name exceeds 25 bytes)",
@@ -164,9 +162,17 @@ impl RaastQrBuilder {
             ));
         }
 
+        // Must be exactly 2 characters and in the numeric range 26..=51
+        if self.mai_tag.len() != 2 {
+            return Err(RaastError::MalformedTlv(
+                "MAI Tag must be exactly 2 ASCII digits",
+            ));
+        }
         let tag_num = self.mai_tag.parse::<u8>().unwrap_or(0);
         if !(26..=51).contains(&tag_num) {
-            return Err(RaastError::MalformedTlv("MAI Tag must be in range 26..=51"));
+            return Err(RaastError::MalformedTlv(
+                "MAI Tag must be in numeric range 26..=51",
+            ));
         }
 
         if self.initiation_method == InitiationMethod::Dynamic && self.amount.is_none() {

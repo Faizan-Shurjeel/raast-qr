@@ -38,13 +38,21 @@ enum Commands {
         #[arg(short, long)]
         alias: String,
 
-        /// Merchant Name (max 25 characters)
+        /// Merchant Name (max 25 bytes)
         #[arg(short, long)]
         name: String,
 
-        /// Merchant City (max 15 characters)
+        /// Merchant City (max 15 bytes)
         #[arg(short, long)]
         city: String,
+
+        /// Merchant Account Information Tag (default "26", range 26..=51)
+        #[arg(long, default_value = "26")]
+        mai_tag: String,
+
+        /// Scheme Identifier / GUID (default "pk.raast")
+        #[arg(long, default_value = "pk.raast")]
+        scheme_guid: String,
 
         /// Transaction Amount in PKR (dynamic payment)
         #[arg(long)]
@@ -88,6 +96,8 @@ fn main() {
                 OutputFormat::Human => {
                     println!("=== SBP Raast QR Payload ===");
                     println!("Initiation Method : {:?}", qr.initiation_method);
+                    println!("MAI Tag           : {}", qr.mai_tag);
+                    println!("Scheme GUID       : {}", qr.scheme_guid);
                     println!("Raast ID / Alias  : {}", qr.raast_id);
                     println!("Bank Code         : {:?}", qr.bank_code);
                     println!("Merchant Name     : {}", qr.merchant_name);
@@ -113,12 +123,16 @@ fn main() {
             alias,
             name,
             city,
+            mai_tag,
+            scheme_guid,
             amount,
             mcc,
             reference,
             dynamic,
         } => {
             let mut builder = RaastQr::builder()
+                .mai_tag(mai_tag)
+                .scheme_guid(scheme_guid)
                 .raast_alias(alias)
                 .merchant_name(name)
                 .merchant_city(city)

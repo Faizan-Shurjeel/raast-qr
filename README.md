@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/raast-qr.svg)](https://crates.io/crates/raast-qr)
 [![Documentation](https://docs.rs/raast-qr/badge.svg)](https://docs.rs/raast-qr)
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 [![No-Std](https://img.shields.io/badge/no--std-supported-success.svg)](#)
 
 A high-performance, `#![no_std]`-compatible, fail-closed EMVCo Merchant-Presented Mode (MPM) QR engine tailored for Pakistan's payment rails and the **State Bank of Pakistan (SBP) Raast P2M & P2P** specifications.
@@ -13,8 +13,8 @@ Written in pure Rust with zero heap allocations on parsing, deterministic fixed-
 
 ## Features
 
-- **Interoperable MAI Architecture:** Supports Merchant Account Information tags `26..=51` and customizable scheme GUIDs.
-- **Fail-Closed Security:** Corrupt lengths, missing checksums, multi-byte slicing bugs, or duplicate tags fail immediately.
+- **Interoperable MAI Architecture:** Supports Merchant Account Information across tags `26..=51` and customizable scheme GUIDs.
+- **Fail-Closed Security:** Hard bounds on EMVCo byte lengths, non-ASCII boundary checks to prevent panic vectors, and duplicate-tag smuggling guards.
 - **Zero-Alloc Parsing:** Borrows directly from byte slices (`&str` / `&[u8]`) without heap overhead.
 - **Safe Currency & Amounts:** Zero floating-point drift using `rust_decimal`.
 - **Standalone CLI:** Inspect, generate, verify, and output structured JSON from the terminal.
@@ -69,8 +69,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 use raast_qr::RaastQr;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Verified, compliant SBP Raast dynamic QR string
-    let raw = "00020101021226290008pk.raast0113+92336786582352045411530358654071250.505802PK5915Faizan Shurjeel6006Lahore62160112INV-2026-0016304E5F1";
+    // Verified SBP Raast dynamic QR string (CRC: 4A1D)
+    let raw = "00020101021226290008pk.raast0113+92336786582352045411530358654071250.505802PK5915Faizan Shurjeel6006Lahore62160112INV-2026-00163044A1D";
 
     let parsed = RaastQr::parse(raw)?;
 
