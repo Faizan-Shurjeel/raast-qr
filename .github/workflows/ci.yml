@@ -10,14 +10,12 @@ jobs:
   test:
     name: Test & Lint Suite
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
+      
       - name: Formatting Check
         run: cargo fmt --all --check
 
@@ -29,3 +27,12 @@ jobs:
 
       - name: No-Std Compilation Check
         run: cargo check -p raast-qr --no-default-features
+
+  msrv:
+    name: MSRV Verification (1.85.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - name: Check Workspace on MSRV
+        run: cargo check --workspace

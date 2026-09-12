@@ -75,8 +75,13 @@ impl<'a> RaastQr<'a> {
         RaastQrBuilder::new()
     }
 
-    /// Parses and validates an EMVCo Raast QR string.
+    /// Parses and validates an EMVCo Raast QR string, preferring "pk.raast" if multiple MAI templates exist.
     pub fn parse(raw: &'a str) -> Result<Self, RaastError> {
+        Self::parse_with_guid(raw, "pk.raast")
+    }
+
+    /// Parses and validates an EMVCo QR string, preferring `preferred_guid` if multiple MAI templates exist.
+    pub fn parse_with_guid(raw: &'a str, preferred_guid: &str) -> Result<Self, RaastError> {
         if raw.len() > 512 {
             return Err(RaastError::PayloadTooLong);
         }
@@ -149,7 +154,9 @@ impl<'a> RaastQr<'a> {
                     let tag_num = tag.parse::<u8>().unwrap();
                     let bit = 1u64 << (tag_num - 26);
                     if (seen_mai_mask & bit) != 0 {
-                        return Err(RaastError::DuplicateTag("duplicate MAI tag"));
+                        return Err(RaastError::DuplicateTag(
+                            "26..=51 (Duplicate MAI tag encountered)",
+                        ));
                     }
                     seen_mai_mask |= bit;
 
@@ -161,7 +168,7 @@ impl<'a> RaastQr<'a> {
                         let sub_tlv = sub?;
                         match sub_tlv.tag {
                             "00" => {
-                                if sub_tlv.value.is_empty() || sub_tlv.value.len() > 32 {
+                                if sub_tlv.value.len() > 32 {
                                     return Err(RaastError::FieldLengthExceeded(
                                         "MAI Sub-tag 00 (GUID exceeds 32 bytes)",
                                     ));
@@ -169,7 +176,7 @@ impl<'a> RaastQr<'a> {
                                 current_guid = Some(sub_tlv.value);
                             }
                             "01" => {
-                                if sub_tlv.value.is_empty() || sub_tlv.value.len() > 90 {
+                                if sub_tlv.value.len() > 90 {
                                     return Err(RaastError::FieldLengthExceeded(
                                         "MAI Sub-tag 01 (Raast ID exceeds 90 bytes)",
                                     ));
@@ -188,8 +195,8 @@ impl<'a> RaastQr<'a> {
                         }
                     }
 
-                    // Select this MAI if none selected yet, or if it explicitly matches Raast scheme
-                    if selected_mai_tag.is_none() || current_guid == Some("pk.raast") {
+                    // Select this MAI if none selected yet, or if it matches the preferred scheme GUID
+                    if selected_mai_tag.is_none() || current_guid == Some(preferred_guid) {
                         selected_mai_tag = Some(tag);
                         selected_scheme_guid = current_guid;
                         selected_raast_id = current_id;

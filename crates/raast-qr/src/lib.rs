@@ -53,10 +53,8 @@ mod tests {
 
     #[test]
     fn test_readme_static_example_string_is_valid() {
-        // Exact string advertised in README.md with verified CRC 4A1D
         let raw = "00020101021226290008pk.raast0113+92336786582352045411530358654071250.505802PK5915Faizan Shurjeel6006Lahore62160112INV-2026-00163044A1D";
-        let parsed =
-            RaastQr::parse(raw).expect("README example string must parse cleanly without error");
+        let parsed = RaastQr::parse(raw).expect("README example string must parse cleanly");
         assert_eq!(parsed.merchant_name, "Faizan Shurjeel");
         assert_eq!(parsed.raast_id, "+923367865823");
         assert_eq!(parsed.amount, Some(dec!(1250.50)));
@@ -88,6 +86,26 @@ mod tests {
         assert_eq!(parsed.currency, Currency::PKR);
         assert_eq!(parsed.amount, Some(dec!(1250.50)));
         assert_eq!(parsed.bill_reference, Some("INV-2026-001"));
+    }
+
+    #[test]
+    fn test_multi_scheme_guid_disambiguation() {
+        // Multi-scheme QR containing Tag 26 (other network) and Tag 28 (Raast)
+        let prefix = "00020101021126210005other01081234567828290008pk.raast0113+9233678658235204541153035865406100.005802PK5906Faizan6006Lahore6304";
+        let crc = compute_crc16(prefix.as_bytes());
+        let crc_bytes = format_crc(crc);
+        let payload = format!("{}{}", prefix, core::str::from_utf8(&crc_bytes).unwrap());
+
+        // Default parse prefers "pk.raast", selecting Tag 28
+        let parsed = RaastQr::parse(&payload).expect("Should parse multi-MAI payload");
+        assert_eq!(parsed.mai_tag, "28");
+        assert_eq!(parsed.scheme_guid, "pk.raast");
+
+        // Targeted parse for "other", selecting Tag 26
+        let parsed_other =
+            RaastQr::parse_with_guid(&payload, "other").expect("Should parse specific scheme");
+        assert_eq!(parsed_other.mai_tag, "26");
+        assert_eq!(parsed_other.scheme_guid, "other");
     }
 
     #[test]
