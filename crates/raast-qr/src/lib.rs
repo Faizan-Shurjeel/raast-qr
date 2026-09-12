@@ -32,8 +32,8 @@ extern crate alloc;
 
 pub mod crc;
 pub mod error;
-pub mod raast;
 pub mod tlv;
+pub mod raast;
 
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub mod builder;
@@ -48,8 +48,8 @@ pub use builder::RaastQrBuilder;
 mod tests {
     use super::*;
     use crate::crc::{compute_crc16, format_crc};
-    use proptest::prelude::*;
     use rust_decimal_macros::dec;
+    use proptest::prelude::*;
 
     #[test]
     fn test_builder_and_parse_roundtrip() {
@@ -64,8 +64,7 @@ mod tests {
             .build_emv_string()
             .expect("Building EMV string should succeed");
 
-        let parsed =
-            RaastQr::parse(&emv_string).expect("Parsing generated EMV string should succeed");
+        let parsed = RaastQr::parse(&emv_string).expect("Parsing generated EMV string should succeed");
 
         assert_eq!(parsed.initiation_method, InitiationMethod::Dynamic);
         assert_eq!(parsed.mai_tag, "26");
@@ -81,23 +80,19 @@ mod tests {
 
     #[test]
     fn test_duplicate_tag_fails_closed_with_exact_variant() {
-        // Construct a payload containing two Tag 54s with a mathematically valid CRC
         let prefix = "00020101021126290008pk.raast0113+9233678658235204541153035865406100.005406200.005802PK5906Faizan6006Lahore6304";
         let crc = compute_crc16(prefix.as_bytes());
         let crc_bytes = format_crc(crc);
         let payload = format!("{}{}", prefix, core::str::from_utf8(&crc_bytes).unwrap());
 
-        // Check that verify_crc passes and the parser hits DuplicateTag("54")
-        assert_eq!(
-            RaastQr::parse(&payload),
-            Err(RaastError::DuplicateTag("54"))
-        );
+        assert_eq!(RaastQr::parse(&payload), Err(RaastError::DuplicateTag("54")));
     }
 
     #[test]
     fn test_non_ascii_merchant_name_byte_count_enforced() {
-        // 13 characters, but in UTF-8 this is 26 bytes (> 25 bytes EMVCo limit)
-        let urdu_name = "فیضان شرجیل";
+        // 16 Unicode characters (<= 25 chars), but 30 bytes in UTF-8 (> 25 bytes EMVCo limit)
+        let urdu_name = "محمد فیضان شرجیل";
+        assert!(urdu_name.chars().count() <= 25);
         assert!(urdu_name.len() > 25);
 
         let res = RaastQr::builder()
