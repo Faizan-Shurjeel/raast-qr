@@ -151,7 +151,7 @@ impl<'a> RaastQr<'a> {
                 }
                 // Tags 26..=51: Merchant Account Information (MAI)
                 tag if (26..=51).contains(&tag.parse::<u8>().unwrap_or(0)) => {
-                    let tag_num = tag.parse::<u8>().unwrap();
+                    let tag_num = tag.parse::<u8>().unwrap_or(0);
                     let bit = 1u64 << (tag_num - 26);
                     if (seen_mai_mask & bit) != 0 {
                         return Err(RaastError::DuplicateTag(
