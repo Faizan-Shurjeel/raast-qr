@@ -389,7 +389,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "raast-qr"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "proptest",
  "rust_decimal",
@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "raast-qr-cli"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clap",
  "raast-qr",
