@@ -3,6 +3,7 @@ name = "raast-qr-cli"
 description = "CLI tool to inspect, generate, and verify Raast & EMVCo QR payloads."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

@@ -3,6 +3,7 @@ name = "raast-qr"
 description = "High-performance, #![no_std], fail-closed EMVCo & Raast QR engine."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -23,4 +24,4 @@ serde = { workspace = true, optional = true }
 
 [dev-dependencies]
 rust_decimal_macros = { workspace = true }
-proptest = "1.4"
+proptest = { workspace = true }

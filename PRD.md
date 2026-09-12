@@ -93,6 +93,6 @@ raast-qr/
 ---
 
 ## 5. Non-Functional Requirements
-- **MSRV:** Rust 1.75+
+- **MSRV:** Rust 1.85+ (Edition 2024 ecosystem baseline)
 - **Zero Panics:** No `unwrap()` or `expect()` in production code paths.
 - **Performance:** Parsing & CRC verification must complete in under 5 microseconds on modern x86_64 and under 25 microseconds on aarch64 (Raspberry Pi 4).
