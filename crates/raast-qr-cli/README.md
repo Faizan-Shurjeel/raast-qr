@@ -27,7 +27,7 @@ Add `raast-qr` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-raast-qr = "0.1.8"
+raast-qr = "0.1.9"
 rust_decimal = "1.33"
 ```
 
@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 use raast_qr::RaastQr;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Verified SBP Raast dynamic QR string (CRC: 4A1D)
+    // Reference EMVCo dynamic QR string (Raast P2M profile) (CRC: 4A1D)
     let raw = "00020101021226290008pk.raast0113+92336786582352045411530358654071250.505802PK5915Faizan Shurjeel6006Lahore62160112INV-2026-00163044A1D";
 
     let parsed = RaastQr::parse(raw)?;
@@ -111,3 +111,4 @@ raast-qr generate \
 Licensed under either of:
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
 - MIT License ([LICENSE-MIT](LICENSE-MIT))
+

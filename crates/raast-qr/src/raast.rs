@@ -13,10 +13,13 @@ use crate::tlv::TlvIter;
 #[cfg(any(feature = "std", feature = "alloc"))]
 use crate::builder::RaastQrBuilder;
 
+/// Point of Initiation Method (Tag 01).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub enum InitiationMethod {
+    /// Reusable static QR code (customer or terminal specifies amount).
     Static,
+    /// Single-use dynamic QR code (strict, pre-set transaction amount).
     Dynamic,
 }
 
@@ -30,10 +33,12 @@ impl InitiationMethod {
     }
 }
 
+/// Supported ISO 4217 Currency (Tag 53).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub enum Currency {
-    PKR, // 586
+    /// Pakistani Rupee (Numeric code 586).
+    PKR,
 }
 
 impl Currency {
@@ -45,21 +50,44 @@ impl Currency {
     }
 }
 
+/// Validated EMVCo / SBP Raast QR representation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct RaastQr<'a> {
+    /// Point of initiation: static or dynamic.
     pub initiation_method: InitiationMethod,
+    /// Merchant Account Information Tag (range 26..=51).
     pub mai_tag: &'a str,
+    /// Scheme Identifier / GUID (Sub-tag 00 of MAI).
     pub scheme_guid: &'a str,
+    /// Merchant Raast ID / Alias / IBAN (Sub-tag 01 of MAI).
     pub raast_id: &'a str,
+    /// Optional Bank / Participant Code (Sub-tag 02 of MAI).
     pub bank_code: Option<&'a str>,
+    /// Merchant Category Code (Tag 52).
     pub mcc: &'a str,
+    /// Transaction Currency (Tag 53, strictly PKR).
     pub currency: Currency,
+    /// Transaction Amount in PKR (Tag 54).
     pub amount: Option<Decimal>,
+    /// Country Code (Tag 58, strictly PK).
     pub country_code: &'a str,
+    /// Merchant Name (Tag 59, max 25 bytes).
     pub merchant_name: &'a str,
+    /// Merchant City (Tag 60, max 15 bytes).
     pub merchant_city: &'a str,
+    /// Optional Bill / Invoice reference (Tag 62.01).
     pub bill_reference: Option<&'a str>,
+}
+
+#[inline]
+fn parse_tag_number(tag: &str) -> Option<u8> {
+    let b = tag.as_bytes();
+    if b.len() == 2 && b[0].is_ascii_digit() && b[1].is_ascii_digit() {
+        Some((b[0] - b'0') * 10 + (b[1] - b'0'))
+    } else {
+        None
+    }
 }
 
 impl<'a> RaastQr<'a> {
@@ -68,10 +96,12 @@ impl<'a> RaastQr<'a> {
         RaastQrBuilder::new()
     }
 
+    /// Parses an EMVCo payload, preferring "pk.raast" if multiple MAI templates exist.
     pub fn parse(raw: &'a str) -> Result<Self, RaastError> {
         Self::parse_with_guid(raw, "pk.raast")
     }
 
+    /// Parses an EMVCo payload, selecting the MAI template matching `preferred_guid`.
     pub fn parse_with_guid(raw: &'a str, preferred_guid: &str) -> Result<Self, RaastError> {
         if raw.len() > 512 {
             return Err(RaastError::PayloadTooLong);
@@ -121,7 +151,7 @@ impl<'a> RaastQr<'a> {
             match tlv.tag {
                 "00" => {
                     if tlv.value != "01" {
-                        return Err(RaastError::MalformedTlv("unsupported payload format version"));
+                        return Err(RaastError::MalformedTlv("unsupported format version"));
                     }
                 }
                 "01" => {
@@ -132,14 +162,17 @@ impl<'a> RaastQr<'a> {
                     match tlv.value {
                         "11" => initiation_method = InitiationMethod::Static,
                         "12" => initiation_method = InitiationMethod::Dynamic,
-                        _ => return Err(RaastError::MalformedTlv("invalid initiation method (expected 11 or 12)")),
+                        _ => return Err(RaastError::MalformedTlv("invalid initiation method")),
                     }
                 }
-                tag if (26..=51).contains(&tag.parse::<u8>().unwrap_or(0)) => {
-                    let tag_num = tag.parse::<u8>().unwrap();
+                tag if parse_tag_number(tag).map_or(false, |n| (26..=51).contains(&n)) => {
+                    let tag_num = match parse_tag_number(tag) {
+                        Some(n) => n,
+                        None => continue,
+                    };
                     let bit = 1u64 << (tag_num - 26);
                     if (seen_mai_mask & bit) != 0 {
-                        return Err(RaastError::DuplicateTag("26..=51 (Duplicate MAI tag encountered)"));
+                        return Err(RaastError::DuplicateTag("26..=51 (Duplicate MAI tag)"));
                     }
                     seen_mai_mask |= bit;
 
@@ -152,19 +185,25 @@ impl<'a> RaastQr<'a> {
                         match sub_tlv.tag {
                             "00" => {
                                 if sub_tlv.value.len() > 32 {
-                                    return Err(RaastError::FieldLengthExceeded("MAI Sub-tag 00 (GUID exceeds 32 bytes)"));
+                                    return Err(RaastError::FieldLengthExceeded(
+                                        "MAI Sub-tag 00 (GUID > 32 bytes)",
+                                    ));
                                 }
                                 current_guid = Some(sub_tlv.value);
                             }
                             "01" => {
                                 if sub_tlv.value.len() > 90 {
-                                    return Err(RaastError::FieldLengthExceeded("MAI Sub-tag 01 (Raast ID exceeds 90 bytes)"));
+                                    return Err(RaastError::FieldLengthExceeded(
+                                        "MAI Sub-tag 01 (ID > 90 bytes)",
+                                    ));
                                 }
                                 current_id = Some(sub_tlv.value);
                             }
                             "02" => {
                                 if sub_tlv.value.len() > 20 {
-                                    return Err(RaastError::FieldLengthExceeded("MAI Sub-tag 02 (Bank code exceeds 20 bytes)"));
+                                    return Err(RaastError::FieldLengthExceeded(
+                                        "MAI Sub-tag 02 (Bank code > 20 bytes)",
+                                    ));
                                 }
                                 current_bank = Some(sub_tlv.value);
                             }
@@ -172,11 +211,12 @@ impl<'a> RaastQr<'a> {
                         }
                     }
 
-                    // Smuggling Prevention: Hard fail if multiple tags claim the preferred scheme GUID
                     if current_guid == Some(preferred_guid) {
                         matched_preferred_count += 1;
                         if matched_preferred_count > 1 {
-                            return Err(RaastError::DuplicateTag("26..=51 (Multiple MAI tags claim preferred scheme GUID)"));
+                            return Err(RaastError::DuplicateTag(
+                                "26..=51 (Multiple MAI tags claim preferred scheme GUID)",
+                            ));
                         }
                         selected_mai_tag = Some(tag);
                         selected_scheme_guid = current_guid;
@@ -194,7 +234,7 @@ impl<'a> RaastQr<'a> {
                         return Err(RaastError::DuplicateTag("52"));
                     }
                     if tlv.length != 4 || !tlv.value.chars().all(|c| c.is_ascii_digit()) {
-                        return Err(RaastError::MalformedTlv("MCC must be exactly 4 ASCII digits"));
+                        return Err(RaastError::MalformedTlv("MCC must be 4 ASCII digits"));
                     }
                     mcc = Some(tlv.value);
                 }
@@ -213,12 +253,12 @@ impl<'a> RaastQr<'a> {
                         return Err(RaastError::DuplicateTag("54"));
                     }
                     if tlv.value.len() > 13 {
-                        return Err(RaastError::FieldLengthExceeded("54 (Amount exceeds 13 characters)"));
+                        return Err(RaastError::FieldLengthExceeded("54 (Amount > 13 chars)"));
                     }
                     let dec = Decimal::from_str(tlv.value)
                         .map_err(|_| RaastError::InvalidAmount("cannot parse decimal value"))?;
                     if dec <= Decimal::ZERO {
-                        return Err(RaastError::InvalidAmount("amount must be greater than zero"));
+                        return Err(RaastError::InvalidAmount("amount must be > 0"));
                     }
                     amount = Some(dec);
                 }
@@ -236,7 +276,9 @@ impl<'a> RaastQr<'a> {
                         return Err(RaastError::DuplicateTag("59"));
                     }
                     if tlv.value.len() > 25 {
-                        return Err(RaastError::FieldLengthExceeded("59 (Merchant Name exceeds 25 bytes)"));
+                        return Err(RaastError::FieldLengthExceeded(
+                            "59 (Merchant Name > 25 bytes)",
+                        ));
                     }
                     merchant_name = Some(tlv.value);
                 }
@@ -245,7 +287,9 @@ impl<'a> RaastQr<'a> {
                         return Err(RaastError::DuplicateTag("60"));
                     }
                     if tlv.value.len() > 15 {
-                        return Err(RaastError::FieldLengthExceeded("60 (Merchant City exceeds 15 bytes)"));
+                        return Err(RaastError::FieldLengthExceeded(
+                            "60 (Merchant City > 15 bytes)",
+                        ));
                     }
                     merchant_city = Some(tlv.value);
                 }
@@ -254,7 +298,9 @@ impl<'a> RaastQr<'a> {
                         let sub_tlv = sub?;
                         if sub_tlv.tag == "01" {
                             if sub_tlv.value.len() > 25 {
-                                return Err(RaastError::FieldLengthExceeded("62.01 (Bill reference exceeds 25 bytes)"));
+                                return Err(RaastError::FieldLengthExceeded(
+                                    "62.01 (Bill ref > 25 bytes)",
+                                ));
                             }
                             bill_reference = Some(sub_tlv.value);
                         }
@@ -265,17 +311,21 @@ impl<'a> RaastQr<'a> {
             }
         }
 
-        let mai_tag = selected_mai_tag.ok_or(RaastError::MissingMandatoryTag("26-51 (Merchant Account Info)"))?;
-        let scheme_guid = selected_scheme_guid.ok_or(RaastError::MissingMandatoryTag("MAI Sub-tag 00 (Scheme GUID)"))?;
-        let raast_id = selected_raast_id.ok_or(RaastError::MissingMandatoryTag("MAI Sub-tag 01 (Raast ID / Alias)"))?;
+        let mai_tag = selected_mai_tag.ok_or(RaastError::MissingMandatoryTag("26-51 (MAI)"))?;
+        let scheme_guid =
+            selected_scheme_guid.ok_or(RaastError::MissingMandatoryTag("MAI Sub-tag 00 (GUID)"))?;
+        let raast_id =
+            selected_raast_id.ok_or(RaastError::MissingMandatoryTag("MAI Sub-tag 01 (ID)"))?;
         let mcc = mcc.ok_or(RaastError::MissingMandatoryTag("52 (MCC)"))?;
         let currency = currency.ok_or(RaastError::MissingMandatoryTag("53 (Currency 586)"))?;
-        let country_code = country_code.ok_or(RaastError::MissingMandatoryTag("58 (Country Code)"))?;
-        let merchant_name = merchant_name.ok_or(RaastError::MissingMandatoryTag("59 (Merchant Name)"))?;
-        let merchant_city = merchant_city.ok_or(RaastError::MissingMandatoryTag("60 (Merchant City)"))?;
+        let country_code = country_code.ok_or(RaastError::MissingMandatoryTag("58 (Country)"))?;
+        let merchant_name =
+            merchant_name.ok_or(RaastError::MissingMandatoryTag("59 (Merchant Name)"))?;
+        let merchant_city =
+            merchant_city.ok_or(RaastError::MissingMandatoryTag("60 (Merchant City)"))?;
 
         if initiation_method == InitiationMethod::Dynamic && amount.is_none() {
-            return Err(RaastError::InvalidAmount("dynamic initiation method requires an amount"));
+            return Err(RaastError::InvalidAmount("dynamic QR requires an amount"));
         }
 
         Ok(Self {

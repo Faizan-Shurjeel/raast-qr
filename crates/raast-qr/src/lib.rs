@@ -1,28 +1,53 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+//! # raast-qr
+//!
+//! A high-performance, `#![no_std]`-compatible, fail-closed EMVCo Merchant-Presented Mode (MPM)
+//! QR engine tailored for Pakistan's payment rails and the **State Bank of Pakistan (SBP) Raast**
+//! instant payment specifications.
+//!
+//! ## Quick Start Example
+//!
+//! ```rust
+//! use raast_qr::{RaastQr, InitiationMethod, Currency};
+//! use rust_decimal_macros::dec;
+//!
+//! let qr = RaastQr::builder()
+//!     .initiation_method(InitiationMethod::Dynamic)
+//!     .raast_alias("+923367865823")
+//!     .merchant_name("Faizan Shurjeel")
+//!     .merchant_city("Lahore")
+//!     .mcc("5411")
+//!     .amount(dec!(1250.50))
+//!     .bill_reference("INV-2026-001")
+//!     .build_emv_string()
+//!     .expect("Building must succeed");
+//!
+//! let parsed = RaastQr::parse(&qr).expect("Parsing must succeed");
+//! assert_eq!(parsed.merchant_name, "Faizan Shurjeel");
+//! assert_eq!(parsed.amount, Some(dec!(1250.50)));
+//! ```
+
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+pub mod builder;
 pub mod crc;
 pub mod error;
-pub mod tlv;
 pub mod raast;
-
-#[cfg(any(feature = "std", feature = "alloc"))]
-pub mod builder;
-
-pub use error::RaastError;
-pub use raast::{Currency, InitiationMethod, RaastQr};
+pub mod tlv;
 
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub use builder::RaastQrBuilder;
+pub use error::RaastError;
+pub use raast::{Currency, InitiationMethod, RaastQr};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::crc::{compute_crc16, format_crc};
-    use rust_decimal_macros::dec;
     use proptest::prelude::*;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn test_readme_static_example_string_is_valid() {
@@ -46,7 +71,8 @@ mod tests {
             .build_emv_string()
             .expect("Building EMV string should succeed");
 
-        let parsed = RaastQr::parse(&emv_string).expect("Parsing generated EMV string should succeed");
+        let parsed =
+            RaastQr::parse(&emv_string).expect("Parsing generated EMV string should succeed");
 
         assert_eq!(parsed.initiation_method, InitiationMethod::Dynamic);
         assert_eq!(parsed.mai_tag, "26");
@@ -71,25 +97,29 @@ mod tests {
         assert_eq!(parsed.mai_tag, "28");
         assert_eq!(parsed.scheme_guid, "pk.raast");
 
-        let parsed_other = RaastQr::parse_with_guid(&payload, "other").expect("Should parse specific scheme");
+        let parsed_other =
+            RaastQr::parse_with_guid(&payload, "other").expect("Should parse specific scheme");
         assert_eq!(parsed_other.mai_tag, "26");
         assert_eq!(parsed_other.scheme_guid, "other");
     }
 
     #[test]
     fn test_mai_smuggling_multiple_preferred_guids_rejected() {
-        // Tag 26 AND Tag 28 both claiming pk.raast (Smuggling attack)
         let prefix = "00020101021126290008pk.raast0113+92336786582328290008pk.raast0113+9233678658235204541153035865406100.005802PK5906Faizan6006Lahore6304";
         let crc = compute_crc16(prefix.as_bytes());
         let crc_bytes = format_crc(crc);
         let payload = format!("{}{}", prefix, core::str::from_utf8(&crc_bytes).unwrap());
 
-        assert_eq!(RaastQr::parse(&payload), Err(RaastError::DuplicateTag("26..=51 (Multiple MAI tags claim preferred scheme GUID)")));
+        assert_eq!(
+            RaastQr::parse(&payload),
+            Err(RaastError::DuplicateTag(
+                "26..=51 (Multiple MAI tags claim preferred scheme GUID)"
+            ))
+        );
     }
 
     #[test]
     fn test_sub_paisa_amount_rejected_by_builder() {
-        // scale 3 (0.005 PKR) must be rejected
         let res = RaastQr::builder()
             .raast_alias("+923367865823")
             .merchant_name("Faizan")
@@ -107,7 +137,10 @@ mod tests {
         let crc_bytes = format_crc(crc);
         let payload = format!("{}{}", prefix, core::str::from_utf8(&crc_bytes).unwrap());
 
-        assert_eq!(RaastQr::parse(&payload), Err(RaastError::DuplicateTag("54")));
+        assert_eq!(
+            RaastQr::parse(&payload),
+            Err(RaastError::DuplicateTag("54"))
+        );
     }
 
     #[test]

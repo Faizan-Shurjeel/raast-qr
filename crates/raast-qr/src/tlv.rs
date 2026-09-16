@@ -48,7 +48,9 @@ impl<'a> Iterator for TlvIter<'a> {
 
         if !self.remaining.is_char_boundary(2) || !self.remaining.is_char_boundary(4) {
             self.remaining = "";
-            return Some(Err(RaastError::MalformedTlv("header contains non-ASCII characters")));
+            return Some(Err(RaastError::MalformedTlv(
+                "header contains non-ASCII characters",
+            )));
         }
 
         let tag = &self.remaining[..2];
@@ -70,12 +72,16 @@ impl<'a> Iterator for TlvIter<'a> {
         let total_tlv_len = 4 + length;
         if self.remaining.len() < total_tlv_len {
             self.remaining = "";
-            return Some(Err(RaastError::MalformedTlv("value length exceeds available bytes")));
+            return Some(Err(RaastError::MalformedTlv(
+                "value length exceeds available bytes",
+            )));
         }
 
         if !self.remaining.is_char_boundary(total_tlv_len) {
             self.remaining = "";
-            return Some(Err(RaastError::MalformedTlv("value length splits UTF-8 code point")));
+            return Some(Err(RaastError::MalformedTlv(
+                "value length splits UTF-8 code point",
+            )));
         }
 
         let value = &self.remaining[4..total_tlv_len];
@@ -96,23 +102,50 @@ mod tests {
         let tlvs = tlvs.expect("Parsing should succeed");
 
         assert_eq!(tlvs.len(), 3);
-        assert_eq!(tlvs[0], RawTlv { tag: "00", length: 2, value: "01" });
-        assert_eq!(tlvs[1], RawTlv { tag: "01", length: 2, value: "12" });
-        assert_eq!(tlvs[2], RawTlv { tag: "52", length: 4, value: "5411" });
+        assert_eq!(
+            tlvs[0],
+            RawTlv {
+                tag: "00",
+                length: 2,
+                value: "01"
+            }
+        );
+        assert_eq!(
+            tlvs[1],
+            RawTlv {
+                tag: "01",
+                length: 2,
+                value: "12"
+            }
+        );
+        assert_eq!(
+            tlvs[2],
+            RawTlv {
+                tag: "52",
+                length: 4,
+                value: "5411"
+            }
+        );
     }
 
     #[test]
     fn test_non_ascii_header_does_not_panic() {
         let input = "🦀0201";
         let mut iter = TlvIter::new(input);
-        assert!(matches!(iter.next(), Some(Err(RaastError::MalformedTlv(_)))));
+        assert!(matches!(
+            iter.next(),
+            Some(Err(RaastError::MalformedTlv(_)))
+        ));
     }
 
     #[test]
     fn test_plus_in_length_rejected() {
         let input = "00+201";
         let mut iter = TlvIter::new(input);
-        assert!(matches!(iter.next(), Some(Err(RaastError::MalformedTlv("non-numeric length field")))));
+        assert!(matches!(
+            iter.next(),
+            Some(Err(RaastError::MalformedTlv("non-numeric length field")))
+        ));
     }
 
     #[test]
@@ -127,7 +160,21 @@ mod tests {
         let sub_tlvs: Result<Vec<RawTlv>, RaastError> = parent.sub_tlvs().collect();
         let sub_tlvs = sub_tlvs.unwrap();
         assert_eq!(sub_tlvs.len(), 2);
-        assert_eq!(sub_tlvs[0], RawTlv { tag: "00", length: 8, value: "pk.raast" });
-        assert_eq!(sub_tlvs[1], RawTlv { tag: "01", length: 13, value: "+923367865823" });
+        assert_eq!(
+            sub_tlvs[0],
+            RawTlv {
+                tag: "00",
+                length: 8,
+                value: "pk.raast"
+            }
+        );
+        assert_eq!(
+            sub_tlvs[1],
+            RawTlv {
+                tag: "01",
+                length: 13,
+                value: "+923367865823"
+            }
+        );
     }
 }

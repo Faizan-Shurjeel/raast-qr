@@ -15,7 +15,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      
+
       - name: Formatting Check
         run: cargo fmt --all --check
 
@@ -25,8 +25,11 @@ jobs:
       - name: Test Workspace (Unit, Doctests, Proptests)
         run: cargo test --workspace
 
-      - name: No-Std Compilation Check
+      - name: Pure No-Std Check
         run: cargo check -p raast-qr --no-default-features
+
+      - name: Alloc Feature Check
+        run: cargo check -p raast-qr --no-default-features --features alloc
 
   msrv:
     name: MSRV Verification (1.85.0)
