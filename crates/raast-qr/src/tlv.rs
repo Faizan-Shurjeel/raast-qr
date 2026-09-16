@@ -2,7 +2,6 @@
 
 use crate::error::RaastError;
 
-/// Represents a borrowed, validated TLV element within an EMVCo payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RawTlv<'a> {
     pub tag: &'a str,
@@ -11,14 +10,12 @@ pub struct RawTlv<'a> {
 }
 
 impl<'a> RawTlv<'a> {
-    /// Constructs a sub-TLV iterator over the contents of this tag's value.
     #[inline]
     pub fn sub_tlvs(&self) -> TlvIter<'a> {
         TlvIter::new(self.value)
     }
 }
 
-/// An iterator that yields `Result<RawTlv<'a>, RaastError>` without allocating memory.
 #[derive(Debug, Clone)]
 pub struct TlvIter<'a> {
     remaining: &'a str,
@@ -30,7 +27,6 @@ impl<'a> TlvIter<'a> {
         Self { remaining: input }
     }
 
-    /// Returns the unparsed remainder of the input slice.
     #[inline]
     pub fn remaining(&self) -> &'a str {
         self.remaining
@@ -45,33 +41,27 @@ impl<'a> Iterator for TlvIter<'a> {
             return None;
         }
 
-        // Must have at least 4 bytes for Tag (2) and Length (2)
         if self.remaining.len() < 4 {
             self.remaining = "";
             return Some(Err(RaastError::MalformedTlv("truncated tag/length header")));
         }
 
-        // Validate character boundaries before slicing to eliminate panic vectors
         if !self.remaining.is_char_boundary(2) || !self.remaining.is_char_boundary(4) {
             self.remaining = "";
-            return Some(Err(RaastError::MalformedTlv(
-                "header contains non-ASCII characters",
-            )));
+            return Some(Err(RaastError::MalformedTlv("header contains non-ASCII characters")));
         }
 
         let tag = &self.remaining[..2];
-        let len_str = &self.remaining[2..4];
+        let len_bytes = self.remaining[2..4].as_bytes();
 
-        // Length must be two ASCII decimal digits
-        let length: usize = match len_str.parse() {
-            Ok(val) => val,
-            Err(_) => {
-                self.remaining = "";
-                return Some(Err(RaastError::MalformedTlv("non-numeric length field")));
-            }
-        };
+        // Enforce pure ASCII decimal digits (rejects '+5', '-1', etc.)
+        if !len_bytes[0].is_ascii_digit() || !len_bytes[1].is_ascii_digit() {
+            self.remaining = "";
+            return Some(Err(RaastError::MalformedTlv("non-numeric length field")));
+        }
 
-        // EMVCo lengths must be between 1 and 99
+        let length = ((len_bytes[0] - b'0') as usize) * 10 + ((len_bytes[1] - b'0') as usize);
+
         if length == 0 {
             self.remaining = "";
             return Some(Err(RaastError::MalformedTlv("length cannot be zero")));
@@ -80,17 +70,12 @@ impl<'a> Iterator for TlvIter<'a> {
         let total_tlv_len = 4 + length;
         if self.remaining.len() < total_tlv_len {
             self.remaining = "";
-            return Some(Err(RaastError::MalformedTlv(
-                "value length exceeds available bytes",
-            )));
+            return Some(Err(RaastError::MalformedTlv("value length exceeds available bytes")));
         }
 
-        // Ensure slicing at character boundary for valid UTF-8
         if !self.remaining.is_char_boundary(total_tlv_len) {
             self.remaining = "";
-            return Some(Err(RaastError::MalformedTlv(
-                "value length splits UTF-8 code point",
-            )));
+            return Some(Err(RaastError::MalformedTlv("value length splits UTF-8 code point")));
         }
 
         let value = &self.remaining[4..total_tlv_len];
@@ -111,40 +96,23 @@ mod tests {
         let tlvs = tlvs.expect("Parsing should succeed");
 
         assert_eq!(tlvs.len(), 3);
-        assert_eq!(
-            tlvs[0],
-            RawTlv {
-                tag: "00",
-                length: 2,
-                value: "01"
-            }
-        );
-        assert_eq!(
-            tlvs[1],
-            RawTlv {
-                tag: "01",
-                length: 2,
-                value: "12"
-            }
-        );
-        assert_eq!(
-            tlvs[2],
-            RawTlv {
-                tag: "52",
-                length: 4,
-                value: "5411"
-            }
-        );
+        assert_eq!(tlvs[0], RawTlv { tag: "00", length: 2, value: "01" });
+        assert_eq!(tlvs[1], RawTlv { tag: "01", length: 2, value: "12" });
+        assert_eq!(tlvs[2], RawTlv { tag: "52", length: 4, value: "5411" });
     }
 
     #[test]
     fn test_non_ascii_header_does_not_panic() {
         let input = "🦀0201";
         let mut iter = TlvIter::new(input);
-        assert!(matches!(
-            iter.next(),
-            Some(Err(RaastError::MalformedTlv(_)))
-        ));
+        assert!(matches!(iter.next(), Some(Err(RaastError::MalformedTlv(_)))));
+    }
+
+    #[test]
+    fn test_plus_in_length_rejected() {
+        let input = "00+201";
+        let mut iter = TlvIter::new(input);
+        assert!(matches!(iter.next(), Some(Err(RaastError::MalformedTlv("non-numeric length field")))));
     }
 
     #[test]
@@ -159,21 +127,7 @@ mod tests {
         let sub_tlvs: Result<Vec<RawTlv>, RaastError> = parent.sub_tlvs().collect();
         let sub_tlvs = sub_tlvs.unwrap();
         assert_eq!(sub_tlvs.len(), 2);
-        assert_eq!(
-            sub_tlvs[0],
-            RawTlv {
-                tag: "00",
-                length: 8,
-                value: "pk.raast"
-            }
-        );
-        assert_eq!(
-            sub_tlvs[1],
-            RawTlv {
-                tag: "01",
-                length: 13,
-                value: "+923367865823"
-            }
-        );
+        assert_eq!(sub_tlvs[0], RawTlv { tag: "00", length: 8, value: "pk.raast" });
+        assert_eq!(sub_tlvs[1], RawTlv { tag: "01", length: 13, value: "+923367865823" });
     }
 }

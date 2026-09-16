@@ -1,39 +1,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-//! # raast-qr
-//!
-//! High-performance, `#![no_std]`, fail-closed EMVCo Merchant-Presented Mode (MPM) QR engine
-//! tailored for Pakistan's digital payment rails.
-//!
-//! ## Doctest Example: Generate and Parse
-//!
-//! ```rust
-//! use raast_qr::{RaastQr, InitiationMethod, Currency};
-//! use rust_decimal_macros::dec;
-//!
-//! let emv_string = RaastQr::builder()
-//!     .initiation_method(InitiationMethod::Dynamic)
-//!     .raast_alias("+923367865823")
-//!     .merchant_name("Faizan Shurjeel")
-//!     .merchant_city("Lahore")
-//!     .mcc("5411")
-//!     .amount(dec!(1250.50))
-//!     .bill_reference("INV-2026-001")
-//!     .build_emv_string()
-//!     .expect("Building must succeed");
-//!
-//! let parsed = RaastQr::parse(&emv_string).expect("Parsing must succeed");
-//! assert_eq!(parsed.merchant_name, "Faizan Shurjeel");
-//! assert_eq!(parsed.amount, Some(dec!(1250.50)));
-//! ```
-
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
 pub mod crc;
 pub mod error;
-pub mod raast;
 pub mod tlv;
+pub mod raast;
 
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub mod builder;
@@ -48,8 +21,8 @@ pub use builder::RaastQrBuilder;
 mod tests {
     use super::*;
     use crate::crc::{compute_crc16, format_crc};
-    use proptest::prelude::*;
     use rust_decimal_macros::dec;
+    use proptest::prelude::*;
 
     #[test]
     fn test_readme_static_example_string_is_valid() {
@@ -73,8 +46,7 @@ mod tests {
             .build_emv_string()
             .expect("Building EMV string should succeed");
 
-        let parsed =
-            RaastQr::parse(&emv_string).expect("Parsing generated EMV string should succeed");
+        let parsed = RaastQr::parse(&emv_string).expect("Parsing generated EMV string should succeed");
 
         assert_eq!(parsed.initiation_method, InitiationMethod::Dynamic);
         assert_eq!(parsed.mai_tag, "26");
@@ -90,22 +62,42 @@ mod tests {
 
     #[test]
     fn test_multi_scheme_guid_disambiguation() {
-        // Multi-scheme QR containing Tag 26 (other network) and Tag 28 (Raast)
         let prefix = "00020101021126210005other01081234567828290008pk.raast0113+9233678658235204541153035865406100.005802PK5906Faizan6006Lahore6304";
         let crc = compute_crc16(prefix.as_bytes());
         let crc_bytes = format_crc(crc);
         let payload = format!("{}{}", prefix, core::str::from_utf8(&crc_bytes).unwrap());
 
-        // Default parse prefers "pk.raast", selecting Tag 28
         let parsed = RaastQr::parse(&payload).expect("Should parse multi-MAI payload");
         assert_eq!(parsed.mai_tag, "28");
         assert_eq!(parsed.scheme_guid, "pk.raast");
 
-        // Targeted parse for "other", selecting Tag 26
-        let parsed_other =
-            RaastQr::parse_with_guid(&payload, "other").expect("Should parse specific scheme");
+        let parsed_other = RaastQr::parse_with_guid(&payload, "other").expect("Should parse specific scheme");
         assert_eq!(parsed_other.mai_tag, "26");
         assert_eq!(parsed_other.scheme_guid, "other");
+    }
+
+    #[test]
+    fn test_mai_smuggling_multiple_preferred_guids_rejected() {
+        // Tag 26 AND Tag 28 both claiming pk.raast (Smuggling attack)
+        let prefix = "00020101021126290008pk.raast0113+92336786582328290008pk.raast0113+9233678658235204541153035865406100.005802PK5906Faizan6006Lahore6304";
+        let crc = compute_crc16(prefix.as_bytes());
+        let crc_bytes = format_crc(crc);
+        let payload = format!("{}{}", prefix, core::str::from_utf8(&crc_bytes).unwrap());
+
+        assert_eq!(RaastQr::parse(&payload), Err(RaastError::DuplicateTag("26..=51 (Multiple MAI tags claim preferred scheme GUID)")));
+    }
+
+    #[test]
+    fn test_sub_paisa_amount_rejected_by_builder() {
+        // scale 3 (0.005 PKR) must be rejected
+        let res = RaastQr::builder()
+            .raast_alias("+923367865823")
+            .merchant_name("Faizan")
+            .merchant_city("Lahore")
+            .amount(dec!(10.005))
+            .build_emv_string();
+
+        assert!(matches!(res, Err(RaastError::InvalidAmount(_))));
     }
 
     #[test]
@@ -115,10 +107,7 @@ mod tests {
         let crc_bytes = format_crc(crc);
         let payload = format!("{}{}", prefix, core::str::from_utf8(&crc_bytes).unwrap());
 
-        assert_eq!(
-            RaastQr::parse(&payload),
-            Err(RaastError::DuplicateTag("54"))
-        );
+        assert_eq!(RaastQr::parse(&payload), Err(RaastError::DuplicateTag("54")));
     }
 
     #[test]
