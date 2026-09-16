@@ -27,7 +27,7 @@ Add `raast-qr` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-raast-qr = "0.1.9"
+raast-qr = "0.1.10"
 rust_decimal = "1.33"
 ```
 

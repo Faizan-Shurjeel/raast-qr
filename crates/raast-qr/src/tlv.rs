@@ -54,7 +54,7 @@ impl<'a> Iterator for TlvIter<'a> {
         }
 
         let tag = &self.remaining[..2];
-        let len_bytes = self.remaining[2..4].as_bytes();
+        let len_bytes = &self.remaining.as_bytes()[2..4];
 
         // Enforce pure ASCII decimal digits (rejects '+5', '-1', etc.)
         if !len_bytes[0].is_ascii_digit() || !len_bytes[1].is_ascii_digit() {
@@ -178,3 +178,4 @@ mod tests {
         );
     }
 }
+

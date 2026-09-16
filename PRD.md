@@ -11,7 +11,7 @@
 1. **Fail-Closed:** An invalid, truncated, tampered, or non-compliant string must never parse as valid.
 2. **Zero-Alloc / `#![no_std]` First:** Core parsing and generation must function in embedded systems, POS terminals, and WASM targets without requiring an allocator where possible.
 3. **Deterministic Financial Math:** Amounts must use fixed-point arithmetic (`rust_decimal` or integer paisas), never binary floating point (`f32`/`f64`).
-4. **Complete Spec Compliance:** Fully adhere to the EMV® QR Code Specification for Payment Systems (Merchant-Presented Mode) v1.0 and the State Bank of Pakistan (SBP) Raast implementation guidelines.
+4. **Complete Spec Compliance:** Fully adhere to the EMV® QR Code Specification for Payment Systems (Merchant-Presented Mode) v1.0, targeting the State Bank of Pakistan (SBP) Raast profile (provisional pending live merchant scheme calibration).
 
 ---
 
@@ -96,3 +96,4 @@ raast-qr/
 - **MSRV:** Rust 1.85+ (Edition 2024 ecosystem baseline)
 - **Zero Panics:** No `unwrap()` or `expect()` in production code paths.
 - **Performance:** Parsing & CRC verification must complete in under 5 microseconds on modern x86_64 and under 25 microseconds on aarch64 (Raspberry Pi 4).
+

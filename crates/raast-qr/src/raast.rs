@@ -165,7 +165,7 @@ impl<'a> RaastQr<'a> {
                         _ => return Err(RaastError::MalformedTlv("invalid initiation method")),
                     }
                 }
-                tag if parse_tag_number(tag).map_or(false, |n| (26..=51).contains(&n)) => {
+                tag if parse_tag_number(tag).is_some_and(|n| (26..=51).contains(&n)) => {
                     let tag_num = match parse_tag_number(tag) {
                         Some(n) => n,
                         None => continue,

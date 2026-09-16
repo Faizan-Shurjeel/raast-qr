@@ -9,7 +9,7 @@
 //! ## Quick Start Example
 //!
 //! ```rust
-//! use raast_qr::{RaastQr, InitiationMethod, Currency};
+//! use raast_qr::{Currency, InitiationMethod, RaastQr};
 //! use rust_decimal_macros::dec;
 //!
 //! let qr = RaastQr::builder()
@@ -25,17 +25,20 @@
 //!
 //! let parsed = RaastQr::parse(&qr).expect("Parsing must succeed");
 //! assert_eq!(parsed.merchant_name, "Faizan Shurjeel");
+//! assert_eq!(parsed.currency, Currency::PKR);
 //! assert_eq!(parsed.amount, Some(dec!(1250.50)));
 //! ```
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-pub mod builder;
 pub mod crc;
 pub mod error;
 pub mod raast;
 pub mod tlv;
+
+#[cfg(any(feature = "std", feature = "alloc"))]
+pub mod builder;
 
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub use builder::RaastQrBuilder;
