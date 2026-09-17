@@ -10,7 +10,7 @@ repository.workspace = true
 readme = "README.md"
 
 [dependencies]
-raast-qr = { path = "../raast-qr", version = "0.1.10", features = ["serde"] }
+raast-qr = { path = "../raast-qr", version = "0.1.11", features = ["serde"] }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
