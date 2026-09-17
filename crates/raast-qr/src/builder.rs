@@ -148,14 +148,29 @@ impl RaastQrBuilder {
                 "MCC must be exactly 4 ASCII digits",
             ));
         }
-        if self.country_code.len() != 2 {
-            return Err(RaastError::FieldLengthExceeded(
-                "58 (Country code must be 2 bytes)",
+        if self.country_code != "PK" {
+            return Err(RaastError::MalformedTlv(
+                "58 (Country code must be PK for the SBP Raast profile)",
             ));
         }
-        if raast_id.len() > 90 {
+        if raast_id.is_empty() || raast_id.len() > 90 {
             return Err(RaastError::FieldLengthExceeded(
-                "MAI Sub-tag 01 (Raast ID exceeds maximum length)",
+                "MAI Sub-tag 01 (Raast ID must be 1..=90 bytes)",
+            ));
+        }
+        if self.scheme_guid.is_empty() || self.scheme_guid.len() > 32 {
+            return Err(RaastError::FieldLengthExceeded(
+                "MAI Sub-tag 00 (Scheme GUID must be 1..=32 bytes)",
+            ));
+        }
+        if merchant_name.is_empty() {
+            return Err(RaastError::MalformedTlv(
+                "59 (Merchant Name cannot be empty)",
+            ));
+        }
+        if merchant_city.is_empty() {
+            return Err(RaastError::MalformedTlv(
+                "60 (Merchant City cannot be empty)",
             ));
         }
 
@@ -194,7 +209,7 @@ impl RaastQrBuilder {
         write!(mai_sub, "01{:02}{}", raast_id.len(), raast_id)
             .map_err(|_| RaastError::MalformedTlv("fmt error"))?;
         if let Some(ref bank) = self.bank_code {
-            if bank.len() > 20 {
+            if bank.is_empty() || bank.len() > 20 {
                 return Err(RaastError::FieldLengthExceeded(
                     "MAI Sub-tag 02 (Bank code exceeds maximum length)",
                 ));
@@ -249,7 +264,7 @@ impl RaastQrBuilder {
             .map_err(|_| RaastError::MalformedTlv("fmt error"))?;
 
         if let Some(ref bill_ref) = self.bill_reference {
-            if bill_ref.len() > 25 {
+            if bill_ref.is_empty() || bill_ref.len() > 25 {
                 return Err(RaastError::FieldLengthExceeded(
                     "62.01 (Bill reference exceeds 25 bytes)",
                 ));
