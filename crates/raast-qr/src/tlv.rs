@@ -94,6 +94,7 @@ impl<'a> Iterator for TlvIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::vec::Vec;
 
     #[test]
     fn test_parse_basic_tlv_sequence() {

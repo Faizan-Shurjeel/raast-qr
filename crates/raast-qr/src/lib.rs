@@ -9,6 +9,8 @@
 //! ## Quick Start Example
 //!
 //! ```rust
+//! # #[cfg(any(feature = "std", feature = "alloc"))]
+//! # fn main() {
 //! use raast_qr::{Currency, InitiationMethod, RaastQr};
 //! use rust_decimal_macros::dec;
 //!
@@ -27,6 +29,9 @@
 //! assert_eq!(parsed.merchant_name, "Faizan Shurjeel");
 //! assert_eq!(parsed.currency, Currency::PKR);
 //! assert_eq!(parsed.amount, Some(dec!(1250.50)));
+//! # }
+//! # #[cfg(not(any(feature = "std", feature = "alloc")))]
+//! # fn main() {}
 //! ```
 
 #[cfg(feature = "alloc")]
@@ -43,15 +48,20 @@ pub mod builder;
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub use builder::RaastQrBuilder;
 pub use error::RaastError;
-pub use raast::{Currency, InitiationMethod, RaastQr};
+pub use raast::{Currency, Fee, InitiationMethod, RaastQr};
+
+#[cfg(test)]
+extern crate std;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::crc::{compute_crc16, format_crc};
     use proptest::prelude::*;
+    #[cfg(any(feature = "std", feature = "alloc"))]
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use std::{format, string::String, vec::Vec};
 
     #[test]
     fn test_readme_static_example_string_is_valid() {
@@ -62,6 +72,7 @@ mod tests {
         assert_eq!(parsed.amount, Some(dec!(1250.50)));
     }
 
+    #[cfg(any(feature = "std", feature = "alloc"))]
     #[test]
     fn test_builder_and_parse_roundtrip() {
         let emv_string = RaastQr::builder()
@@ -122,6 +133,7 @@ mod tests {
         );
     }
 
+    #[cfg(any(feature = "std", feature = "alloc"))]
     #[test]
     fn test_sub_paisa_amount_rejected_by_builder() {
         let res = RaastQr::builder()
@@ -147,6 +159,7 @@ mod tests {
         );
     }
 
+    #[cfg(any(feature = "std", feature = "alloc"))]
     #[test]
     fn test_non_ascii_merchant_name_byte_count_enforced() {
         let urdu_name = "محمد فیضان شرجیل";
@@ -162,6 +175,7 @@ mod tests {
         assert!(matches!(res, Err(RaastError::FieldLengthExceeded(_))));
     }
 
+    #[cfg(any(feature = "std", feature = "alloc"))]
     #[test]
     fn test_three_digit_mai_tag_rejected_by_builder() {
         let res = RaastQr::builder()
@@ -272,6 +286,7 @@ mod tests {
         );
     }
 
+    #[cfg(any(feature = "std", feature = "alloc"))]
     #[test]
     fn test_builder_rejects_non_pk_country() {
         let res = RaastQr::builder()
@@ -284,6 +299,7 @@ mod tests {
         assert!(matches!(res, Err(RaastError::MalformedTlv(_))));
     }
 
+    #[cfg(any(feature = "std", feature = "alloc"))]
     #[test]
     fn test_builder_rejects_oversized_scheme_guid() {
         let res = RaastQr::builder()
@@ -296,6 +312,7 @@ mod tests {
         assert!(matches!(res, Err(RaastError::FieldLengthExceeded(_))));
     }
 
+    #[cfg(any(feature = "std", feature = "alloc"))]
     proptest! {
         #[test]
         fn prop_builder_output_always_parses(

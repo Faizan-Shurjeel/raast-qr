@@ -50,6 +50,20 @@ impl Currency {
     }
 }
 
+/// QR-defined merchant fee or tip configuration (Tags 55–57), not a bank fee.
+/// This is separate from the base transaction amount (Tag 54); it does not
+/// represent a payable total.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub enum Fee {
+    /// Prompt the customer to enter a tip (55 = 01).
+    PromptTip,
+    /// Merchant-defined fixed fee in PKR (55 = 02, 56 = amount).
+    Fixed(Decimal),
+    /// Merchant-defined percentage fee (55 = 03, 57 = percentage).
+    Percentage(Decimal),
+}
+
 /// Validated EMVCo / SBP Raast QR representation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
@@ -68,8 +82,10 @@ pub struct RaastQr<'a> {
     pub mcc: &'a str,
     /// Transaction Currency (Tag 53, strictly PKR).
     pub currency: Currency,
-    /// Transaction Amount in PKR (Tag 54).
+    /// Base transaction amount in PKR (Tag 54), not including any fee or tip.
     pub amount: Option<Decimal>,
+    /// Optional fee or tip configuration (Tags 55–57).
+    pub fee: Option<Fee>,
     /// Country Code (Tag 58, strictly PK).
     pub country_code: &'a str,
     /// Merchant Name (Tag 59, max 25 bytes).
@@ -128,6 +144,48 @@ fn validate_amount_grammar(value: &str) -> Result<(), RaastError> {
     }
 
     Ok(())
+}
+
+/// Fees use the EMVCo numeric grammar without inheriting Tag 54's
+/// canonical-leading-zero restriction. Validate bytes before Decimal::from_str
+/// so signs, exponents and non-ASCII digits cannot be accepted by accident.
+fn parse_fee_decimal(
+    value: &str,
+    max_len: usize,
+    tag: &'static str,
+) -> Result<Decimal, RaastError> {
+    if value.len() > max_len {
+        return Err(RaastError::FieldLengthExceeded(tag));
+    }
+    let bytes = value.as_bytes();
+    let mut dot = None;
+    for (index, &byte) in bytes.iter().enumerate() {
+        match byte {
+            b'0'..=b'9' => {}
+            b'.' if dot.is_none() && index > 0 => {
+                dot = Some(index);
+            }
+            _ => {
+                return Err(RaastError::InvalidAmount(
+                    "fee must be plain ASCII decimal digits",
+                ))
+            }
+        }
+    }
+    if bytes.is_empty() || dot.is_some_and(|index| bytes.len() - index - 1 > 2) {
+        return Err(RaastError::InvalidAmount(
+            "fee must have digits and no more than 2 decimal places",
+        ));
+    }
+    // Tags 56 and 57 permit a decimal point with no fractional digits.
+    // Strip it for Decimal parsing without changing or allocating the QR value.
+    let numeric = value.strip_suffix('.').unwrap_or(value);
+    let fee = Decimal::from_str(numeric)
+        .map_err(|_| RaastError::InvalidAmount("cannot parse fee decimal value"))?;
+    if fee <= Decimal::ZERO {
+        return Err(RaastError::InvalidAmount("fee must be positive"));
+    }
+    Ok(fee)
 }
 
 #[inline]
@@ -199,6 +257,9 @@ impl<'a> RaastQr<'a> {
         let mut mcc: Option<&'a str> = None;
         let mut currency: Option<Currency> = None;
         let mut amount: Option<Decimal> = None;
+        let mut fee_indicator: Option<&str> = None;
+        let mut fixed_fee: Option<Decimal> = None;
+        let mut percentage_fee: Option<Decimal> = None;
         let mut country_code: Option<&'a str> = None;
         let mut merchant_name: Option<&'a str> = None;
         let mut merchant_city: Option<&'a str> = None;
@@ -338,6 +399,37 @@ impl<'a> RaastQr<'a> {
                     }
                     amount = Some(dec);
                 }
+                "55" => {
+                    if fee_indicator.is_some() {
+                        return Err(RaastError::DuplicateTag("55"));
+                    }
+                    if !matches!(tlv.value, "01" | "02" | "03") {
+                        return Err(RaastError::MalformedTlv("55 must be exactly 01, 02 or 03"));
+                    }
+                    fee_indicator = Some(tlv.value);
+                }
+                "56" => {
+                    if fixed_fee.is_some() {
+                        return Err(RaastError::DuplicateTag("56"));
+                    }
+                    fixed_fee = Some(parse_fee_decimal(
+                        tlv.value,
+                        13,
+                        "56 (fixed fee > 13 bytes)",
+                    )?);
+                }
+                "57" => {
+                    if percentage_fee.is_some() {
+                        return Err(RaastError::DuplicateTag("57"));
+                    }
+                    let percent = parse_fee_decimal(tlv.value, 5, "57 (percentage > 5 bytes)")?;
+                    if percent < Decimal::new(1, 2) || percent > Decimal::new(9999, 2) {
+                        return Err(RaastError::InvalidAmount(
+                            "57 must be between 0.01 and 99.99",
+                        ));
+                    }
+                    percentage_fee = Some(percent);
+                }
                 "58" => {
                     if country_code.is_some() {
                         return Err(RaastError::DuplicateTag("58"));
@@ -413,6 +505,18 @@ impl<'a> RaastQr<'a> {
             return Err(RaastError::InvalidAmount("dynamic QR requires an amount"));
         }
 
+        let fee = match (fee_indicator, fixed_fee, percentage_fee) {
+            (None, None, None) => None,
+            (Some("01"), None, None) => Some(Fee::PromptTip),
+            (Some("02"), Some(value), None) => Some(Fee::Fixed(value)),
+            (Some("03"), None, Some(value)) => Some(Fee::Percentage(value)),
+            _ => {
+                return Err(RaastError::MalformedTlv(
+                    "inconsistent fee tags 55, 56 and 57",
+                ))
+            }
+        };
+
         Ok(Self {
             initiation_method,
             mai_tag,
@@ -422,6 +526,7 @@ impl<'a> RaastQr<'a> {
             mcc,
             currency,
             amount,
+            fee,
             country_code,
             merchant_name,
             merchant_city,

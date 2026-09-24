@@ -10,7 +10,30 @@ use rust_decimal::Decimal;
 
 use crate::crc::{compute_crc16, format_crc};
 use crate::error::RaastError;
-use crate::raast::{Currency, InitiationMethod};
+use crate::raast::{Currency, Fee, InitiationMethod};
+
+fn write_numeric_fee(
+    buf: &mut String,
+    indicator: &str,
+    tag: &str,
+    value: Decimal,
+    max_len: usize,
+) -> Result<(), RaastError> {
+    if value <= Decimal::ZERO || value.scale() > 2 {
+        return Err(RaastError::InvalidAmount(
+            "fee must be positive with no more than 2 decimal places",
+        ));
+    }
+    let text = value.normalize().to_string();
+    if text.len() > max_len {
+        return Err(RaastError::FieldLengthExceeded(
+            "56 or 57 (fee exceeds maximum byte length)",
+        ));
+    }
+    buf.push_str(indicator);
+    write!(buf, "{}{:02}{}", tag, text.len(), text)
+        .map_err(|_| RaastError::MalformedTlv("fmt error"))
+}
 
 #[derive(Debug, Clone)]
 pub struct RaastQrBuilder {
@@ -22,6 +45,7 @@ pub struct RaastQrBuilder {
     mcc: String,
     currency: Currency,
     amount: Option<Decimal>,
+    fee: Option<Fee>,
     country_code: String,
     merchant_name: Option<String>,
     merchant_city: Option<String>,
@@ -45,6 +69,7 @@ impl RaastQrBuilder {
             mcc: "0000".to_string(),
             currency: Currency::PKR,
             amount: None,
+            fee: None,
             country_code: "PK".to_string(),
             merchant_name: None,
             merchant_city: None,
@@ -94,6 +119,11 @@ impl RaastQrBuilder {
 
     pub fn amount(mut self, amount: Decimal) -> Self {
         self.amount = Some(amount);
+        self
+    }
+
+    pub fn fee(mut self, fee: Fee) -> Self {
+        self.fee = Some(fee);
         self
     }
 
@@ -252,6 +282,21 @@ impl RaastQrBuilder {
             }
             write!(buf, "54{:02}{}", amt_str.len(), amt_str)
                 .map_err(|_| RaastError::MalformedTlv("fmt error"))?;
+        }
+
+        if let Some(fee) = self.fee {
+            match fee {
+                Fee::PromptTip => buf.push_str("550201"),
+                Fee::Fixed(value) => write_numeric_fee(&mut buf, "550202", "56", value, 13)?,
+                Fee::Percentage(value) => {
+                    if value < Decimal::new(1, 2) || value > Decimal::new(9999, 2) {
+                        return Err(RaastError::InvalidAmount(
+                            "57 must be between 0.01 and 99.99",
+                        ));
+                    }
+                    write_numeric_fee(&mut buf, "550203", "57", value, 5)?;
+                }
+            }
         }
 
         write!(buf, "58{:02}{}", self.country_code.len(), self.country_code)
